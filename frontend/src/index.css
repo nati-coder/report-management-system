@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-slate-50 text-slate-800 antialiased dark:bg-slate-900 dark:text-slate-100; }
+.input { @apply w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:ring-brand-900/40; }
+.label { @apply mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300; }
+
+/* Printing an approved report format: plain black-on-white table, header repeats on every page, rows never split. */
+@media print {
+  @page { size: A4; margin: 14mm; }
+  html, body { background: #fff !important; color: #000 !important; }
+  .format-table { width: 100%; border-collapse: collapse; font-size: 10.5pt; }
+  .format-table th, .format-table td { border: 1px solid #333 !important; color: #000 !important; padding-top: 4px; padding-bottom: 4px; }
+  .format-table th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .format-table tbody tr { background: transparent !important; }
+  .format-table thead { display: table-header-group; }
+  .format-table tr { break-inside: avoid; page-break-inside: avoid; }
+}
+
+/* Printing a plan table (annual cascade overview / monthly plan): landscape, black on white, header repeats, rows never split. */
+.plan-print { page: plan; }
+@page plan { size: A4 landscape; margin: 12mm; }
+@media print {
+  .plan-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  .plan-table th, .plan-table td { border: 1px solid #333 !important; color: #000 !important; padding: 3px 4px; }
+  .plan-table th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .plan-table tbody tr { background: transparent !important; }
+  .plan-table thead { display: table-header-group; }
+  .plan-table tr { break-inside: avoid; page-break-inside: avoid; }
+}
+
+/* Spreadsheet-style cells (components/common/GridCell.jsx): borderless, green outline when selected. */
+.grid-cell { @apply block w-full min-w-[4.5rem] bg-transparent px-2 py-1.5 text-right text-sm tabular-nums text-slate-900 outline-none dark:text-slate-100; }
+.grid-cell:focus { @apply bg-white ring-2 ring-inset ring-emerald-600 dark:bg-slate-900; }
+.grid-cell:disabled { @apply bg-slate-50 text-slate-500 dark:bg-slate-900/40 dark:text-slate-400; }
+.grid-cell.invalid { @apply bg-red-50 dark:bg-red-900/20; }
