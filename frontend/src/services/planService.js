@@ -14,3 +14,4 @@ export const listMonthly = (params) => unwrap(api.get('/plans', { params: { ...p
 export const saveMonthly = (body) => unwrap(api.post('/plans/monthly', body));
 /** Zonal Expert: Excel file (Blob) of a plan table as shown on screen — see utils/planTable.js for the shape. */
 export const exportTable = (table) => api.post('/plans/export', table, { responseType: 'blob' }).then((r) => r.data);
+export const overview = (params) => unwrap(api.get('/plans/overview', { params }));

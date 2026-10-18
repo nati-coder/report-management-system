@@ -11,6 +11,7 @@ import { notifyMany } from '../services/notificationService.js';
 import { templateScope, woredaPlanScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
 import { indicatorsOf } from '../utils/formatTree.js';
 import { hierarchyOf, hierarchyErrors, zoneTotalErrors, monthlyTotalErrors } from '../utils/planChecks.js';
+import { buildOverview } from '../utils/planOverview.js';
 
 const num = (v) => (v ? Number(v) : undefined);
 
@@ -34,8 +35,11 @@ export const listPlans = catchAsync(async (req, res) => {
     f.excludeDraft = true; // drafts are the zonal expert's working copy
   } else {
     if (ZONAL_ROLES.includes(u.role)) {
-      if (!u.zone_id) return success(res, []);
+      const scope = templateScope(u);
+      if (!u.zone_id || !scope) return success(res, []);
       f.zone_id = u.zone_id;
+      f.department_id = scope.department_id;
+      if (scope.team_id) f.team_id = scope.team_id;
     }
     if (woreda_id) f.woredaIds = [woreda_id];
   }

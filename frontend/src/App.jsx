@@ -20,6 +20,7 @@ import FormatListPage from './pages/formats/FormatListPage.jsx';
 import FormatBuilderPage from './pages/formats/FormatBuilderPage.jsx';
 import PlanPage from './pages/plans/PlanPage.jsx';
 import MyPlansPage from './pages/plans/MyPlansPage.jsx';
+import PlansOverviewPage from './pages/plans/PlansOverviewPage.jsx';
 import TemplateBuilderPage from './pages/templates/TemplateBuilderPage.jsx';
 import ReportListPage from './pages/reports/ReportListPage.jsx';
 import CreateReportPage from './pages/reports/CreateReportPage.jsx';
@@ -83,6 +84,9 @@ export default function App() {
           {/* Plan (Annual Plan + Monthly Plan tabs): Zonal Expert */}
           <Route element={<ProtectedRoute roles={[ZONAL_EXPERT]} />}>
             <Route path="/plans/cascade" element={<PlanPage />} />
+          </Route>
+          <Route element={<ProtectedRoute roles={[ZONAL_DEPT_HEAD, ZONAL_PLAN_EXPERT, ZONAL_EXPERT, ZONAL_TEAM_LEADER]} />}>
+            <Route path="/plans/overview" element={<PlansOverviewPage />} />
           </Route>
           {/* Annual plan received from the zone: woreda users read it, the Dept Head accepts or rejects it */}
           <Route element={<ProtectedRoute roles={WOREDA_ROLES} />}>

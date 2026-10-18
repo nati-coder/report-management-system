@@ -10,6 +10,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', c.listPlans);
+router.get('/overview', c.planOverview);
 router.get('/zone', c.getZonePlan);
 router.put('/zone', authorize(ROLES.ZONAL_EXPERT), validate(schemas.zonePlanSave), audit('zone_plan.save', 'zone_plan'), c.saveZonePlan);
 router.post('/cascade', authorize(ROLES.ZONAL_EXPERT), validate(schemas.plansCascade), audit('plan.cascade', 'plan'), c.cascadePlans);

@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import useAuth from '../../hooks/useAuth.js';
-import { DASHBOARD_PATH, ROLES, isWoredaUser } from '../../utils/roleHelpers.js';
+import { DASHBOARD_PATH, ROLES, isWoredaUser, isZonalUser } from '../../utils/roleHelpers.js';
 import { t } from '../../utils/formatters.js';
 
 export default function Sidebar() {
@@ -18,6 +18,7 @@ export default function Sidebar() {
     ...(canTemplates ? [{ to: '/templates', label: 'Report Templates' }] : []),
     ...(canFormats ? [{ to: '/report-formats', label: 'Report Formats' }] : []),
     ...(canPlans ? [{ to: '/plans/cascade', label: 'Plan' }] : []),
+    ...(isZonalUser(user) || user.role === ROLES.ADMIN ? [{ to: '/plans/overview', label: 'Zone Plan Overview' }] : []),
     ...(isWoredaUser(user) ? [{ to: '/plans', label: 'Annual Plans' }] : []),
     { to: '/rankings/teams', label: `${t('rankings')} · Teams` },
     { to: '/rankings/woredas', label: `${t('rankings')} · Woredas` },
