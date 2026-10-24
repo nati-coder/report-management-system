@@ -58,7 +58,7 @@ const Ranking = {
     const { rows } = await query(
       `WITH r AS (
          SELECT rp.id, rp.team_id, rp.status, rp.submitted_at,
-                                (make_date(rp.year + d.yr, d.mo, d.dy) + INTERVAL '4 days') AS deadline
+                (make_date(rp.year + d.yr, d.mo, d.dy) + INTERVAL '4 days') AS deadline
          FROM reports rp
          JOIN (VALUES (7,7,8,7),(8,7,9,11),(9,7,10,11),(10,7,11,10),(11,7,12,10),(12,8,1,9),
                       (1,8,2,8),(2,8,3,10),(3,8,4,9),(4,8,5,9),(5,8,6,8),(6,8,7,8)) AS d(slot, yr, mo, dy)

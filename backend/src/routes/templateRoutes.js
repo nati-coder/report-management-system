@@ -20,6 +20,8 @@ const templateEditors = authorize(ROLES.ZONAL_PLAN_EXPERT);
 router.get('/versions', c.listVersions);
 router.post('/versions', versionEditors, validate(schemas.reportVersion), audit('report_version.create', 'report_version'), c.createVersion);
 router.get('/versions/:id', c.getVersion);
+// Closing is the System Admin's alone (authorize() with no roles lets only the admin through).
+router.post('/versions/:id/close', authorize(), audit('report_version.close', 'report_version'), c.closeVersion);
 router.post('/versions/:id/approve', authorize(ROLES.ZONAL_DEPT_HEAD), audit('report_version.approve', 'report_version'), c.approveVersion);
 
 router.get('/', c.listTemplates);

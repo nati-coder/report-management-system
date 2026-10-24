@@ -63,10 +63,13 @@ const Template = {
   // importController) keeps functioning against versions created before
   // the report_formats/plans redesign. New work should create formats via
   // the ReportFormat model and plan data via the Plan model instead. ----
-  async listVersions(depId) {
-    const { rows } = depId
-      ? await query('SELECT * FROM report_versions WHERE dep_id=$1 ORDER BY year DESC, id DESC', [depId])
-      : await query('SELECT * FROM report_versions ORDER BY year DESC, id DESC');
+  /** openOnly: leave out the versions the System Admin has closed (what template creation offers). */
+  async listVersions(depId, { openOnly = false } = {}) {
+    const cond = []; const p = [];
+    if (depId) { p.push(depId); cond.push(`dep_id = $${p.length}`); }
+    if (openOnly) cond.push('closed_at IS NULL');
+    const { rows } = await query(
+      `SELECT * FROM report_versions ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''} ORDER BY year DESC, id DESC`, p);
     return rows;
   },
   async findVersionById(id) {
@@ -122,6 +125,12 @@ const Template = {
       return version;
     });
   },
+  /** System Admin: close a version for good. Returns null if it doesn't exist or is already closed. */
+  async closeVersion(id, userId) {
+    const { rows } = await query(
+      'UPDATE report_versions SET closed_at=CURRENT_TIMESTAMP, closed_by=$1 WHERE id=$2 AND closed_at IS NULL RETURNING *', [userId, id]);
+    return rows[0] || null;
+  },
   async approveVersion(id, userId) {
     const { rows } = await query(
       'UPDATE report_versions SET approved_by=$1, approval_date=CURRENT_TIMESTAMP WHERE id=$2 RETURNING *', [userId, id]);
@@ -136,6 +145,9 @@ const Template = {
    * unique constraint on (version_id, team_id), so this check matters).
    */
   async createForAllTeams({ version_id, dep_id, title, type, start_year, end_year, templateVersion }, userId) {
+    // Only the version and the title are required; everything else has a default.
+    type = type ?? 'monthly';
+    templateVersion = templateVersion ?? '1.0';
     return withTransaction(async (c) => {
       const { rows: teams } = await c.query(
         'SELECT id, name FROM teams WHERE department_id = $1 ORDER BY name', [dep_id]);

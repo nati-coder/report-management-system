@@ -96,7 +96,7 @@ export const updateTeam = catchAsync(async (req, res) => {
 /** Refuses to delete a team that still has template node definitions, since that FK cascades and would wipe them silently. */
 export const deleteTeam = catchAsync(async (req, res) => {
   const nodeCount = await Department.countReportFormats(Number(req.params.id));
-  if (nodeCount) throw ApiError.conflict(`Cannot delete: ${nodeCount} report template node(s) still reference this team.`);
+  if (nodeCount) throw ApiError.conflict(`Cannot delete: ${nodeCount} template(s), plan(s) or format node(s) still belong to this team.`);
   await Department.deleteTeam(req.params.id);
   success(res, null, 'Team deleted');
 });

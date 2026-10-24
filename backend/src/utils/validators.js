@@ -131,24 +131,27 @@ export const schemas = {
     team_id: id.nullish(),
     is_active: z.boolean().optional(),
   }),
+  // Only version_id, team_id and title are required. type / start_year / version / json_schema are filled in
+  // with defaults (monthly, the report version's year, '1.0', no sections yet) when they are left out.
   template: z.object({
-    title: z.string().min(2),
-    type: z.enum(PERIOD_LIST),
-    start_year: z.number().int(),
+    title: z.string().trim().min(2),
+    type: z.enum(PERIOD_LIST).optional(),
+    start_year: z.number().int().optional(),
     end_year: z.number().int().nullish(),
-    version: z.string().min(1),
+    version: z.string().min(1).optional(),
     version_id: id, // required: report_templates.version_id -> report_versions(id)
     department_id: id.nullish(),
     team_id: id, // required: report_templates.team_id -> teams(id)
-    json_schema: templateSchemaDefinition,
+    json_schema: templateSchemaDefinition.optional(),
   }),
+  // "Create for all teams": only the report version and the title are required.
   templatesForVersion: z.object({
     version_id: id,
-    title: z.string().min(2),
-    type: z.enum(PERIOD_LIST),
-    start_year: z.number().int(),
+    title: z.string().trim().min(2),
+    type: z.enum(PERIOD_LIST).optional(),
+    start_year: z.number().int().optional(),
     end_year: z.number().int().nullish(),
-    templateVersion: z.string().min(1).default('1.0'),
+    templateVersion: z.string().min(1).optional(),
   }),
   reportFormat: z.object({
     template_id: id,

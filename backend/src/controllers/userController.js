@@ -6,14 +6,31 @@ import catchAsync from '../utils/catchAsync.js';
 import { success, created, ApiError } from '../utils/apiResponse.js';
 import { ROLES, WOREDA_ROLES, ZONAL_ROLES } from '../constants/roles.js';
 
-/** Business rules: woreda roles need woreda_id, zonal roles need zone_id */
+/** Roles that belong to a team: a team is mandatory. */
+const TEAM_REQUIRED_ROLES = [ROLES.ZONAL_EXPERT, ROLES.ZONAL_TEAM_LEADER, ROLES.WOREDA_EXPERT, ROLES.WOREDA_TEAM_LEADER];
+
+/**
+ * Business rules: woreda roles need woreda_id; zonal roles need zone_id and never have a woreda;
+ * zonal/woreda experts and team leaders must have a team (which must belong to their department).
+ */
 function checkPlacement(u) {
   if (WOREDA_ROLES.includes(u.role) && !u.woreda_id) throw ApiError.badRequest('woreda_id is required for woreda-level roles');
   if (ZONAL_ROLES.includes(u.role) && !u.zone_id) throw ApiError.badRequest('zone_id is required for zonal-level roles');
+  if (ZONAL_ROLES.includes(u.role) && u.woreda_id) throw ApiError.badRequest('A zonal role cannot be assigned to a woreda');
+  if (TEAM_REQUIRED_ROLES.includes(u.role) && !u.team_id) throw ApiError.badRequest('A team is required for this role');
+}
+
+/** The team must exist and sit in the user's department (when one is given). */
+async function checkTeam(u) {
+  if (!u.team_id) return;
+  const team = await Department.findTeam(u.team_id);
+  if (!team) throw ApiError.badRequest('Unknown team_id');
+  if (u.department_id && team.department_id !== Number(u.department_id)) throw ApiError.badRequest('The team does not belong to the selected department');
 }
 
 export const createUser = catchAsync(async (req, res) => {
   checkPlacement(req.body);
+  await checkTeam(req.body);
   if (req.body.woreda_id && !req.body.zone_id) {
     const w = await Zone.findWoreda(req.body.woreda_id);
     if (!w) throw ApiError.badRequest('Unknown woreda_id');
@@ -40,6 +57,14 @@ export const getUser = catchAsync(async (req, res) => {
 });
 
 export const updateUser = catchAsync(async (req, res) => {
+  // Changing role / woreda / team re-checks the rules on the resulting user (a plain edit like deactivating doesn't).
+  if (['role', 'woreda_id', 'team_id', 'department_id'].some((k) => k in req.body)) {
+    const current = await User.findById(req.params.id);
+    if (!current) throw ApiError.notFound('User not found');
+    const merged = { ...current, ...req.body };
+    checkPlacement(merged);
+    await checkTeam(merged);
+  }
   const user = await User.update(req.params.id, req.body);
   if (!user) throw ApiError.notFound('User not found');
   success(res, user, 'User updated');

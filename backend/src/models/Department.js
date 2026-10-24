@@ -47,10 +47,18 @@ const Department = {
   async deleteTeam(id) {
     await query('DELETE FROM teams WHERE id = $1', [id]);
   },
-  /** Guards against silently cascading away a template's node definitions when a team is deleted. */
+  /**
+   * Everything that still belongs to a team and would block (or silently cascade away) when it is deleted:
+   * its report templates, annual/monthly plans, zone plans and legacy format nodes. (`report_formats` itself has no
+   * team_id any more — it hangs off a template.)
+   */
   async countReportFormats(teamId) {
-    const { rows } = await query('SELECT COUNT(*)::int AS n FROM report_formats WHERE team_id = $1', [teamId]);
-    return rows[0].n;
+    const { rows } = await query(
+      `SELECT (SELECT COUNT(*) FROM report_templates WHERE team_id = $1)
+            + (SELECT COUNT(*) FROM plans WHERE team_id = $1)
+            + (SELECT COUNT(*) FROM zone_plans WHERE team_id = $1)
+            + (SELECT COUNT(*) FROM report_format_nodes WHERE team_id = $1) AS n`, [teamId]);
+    return Number(rows[0].n);
   },
 };
 export default Department;

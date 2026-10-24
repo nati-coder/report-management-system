@@ -16,6 +16,8 @@ import { MONTH_NAMES, PLAN_MONTHS, currentFiscalYear } from '../utils/periods.js
 
 const num = (v) => (v ? Number(v) : undefined);
 
+// A monthly plan covers Hamle → Sene (Ethiopian fiscal year); `month` is the slot number (Hamle = 7 … Sene = 6).
+
 /** Plans visible to the caller: woreda users see only their own woreda's cascaded plans; zonal users their zone's. */
 export const listPlans = catchAsync(async (req, res) => {
   const { format_id, year, woreda_id, status, period } = req.query;

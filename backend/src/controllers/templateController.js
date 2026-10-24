@@ -11,6 +11,16 @@ const deptGuard = (user, deptId) => {
   }
 };
 
+/** A closed report version takes no further templates or template updates. */
+const assertVersionOpen = (version) => {
+  if (version.closed_at) {
+    throw ApiError.conflict('This report version is closed — no further templates or updates are allowed under it.');
+  }
+};
+
+/** Drop keys the client left out, so they can't overwrite stored values with undefined. */
+const defined = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+
 /**
  * Order-independent deep equality for plain JSON values. Needed because
  * Postgres JSONB does not preserve the original key order of what was
@@ -57,6 +67,7 @@ export const createTemplate = catchAsync(async (req, res) => {
 
   const version = await Template.findVersionById(req.body.version_id);
   if (!version) throw ApiError.badRequest('Unknown version_id');
+  assertVersionOpen(version);
   const team = await Department.findTeam(req.body.team_id);
   if (!team) throw ApiError.badRequest('Unknown team_id');
   if (team.department_id !== version.dep_id) {
@@ -69,7 +80,12 @@ export const createTemplate = catchAsync(async (req, res) => {
   const [dup] = await Template.list({ version_id: req.body.version_id, team_id: req.body.team_id });
   if (dup) throw ApiError.conflict('A template already exists for this team under this report version.');
 
-  const t = await Template.create(req.body, req.user.id);
+  // Everything except version, team and title is optional — fill in the defaults.
+  const t = await Template.create({
+    type: 'monthly', start_year: version.year, version: '1.0', json_schema: {},
+    ...defined(req.body),
+    department_id: req.body.department_id ?? version.dep_id,
+  }, req.user.id);
   res.locals.auditTargetId = t.id;
   created(res, t, 'Template created');
 });
@@ -78,16 +94,18 @@ export const updateTemplate = catchAsync(async (req, res) => {
   const existing = await Template.findById(req.params.id);
   if (!existing) throw ApiError.notFound('Template not found');
   deptGuard(req.user, existing.department_id);
+  const ownVersion = await Template.findVersionById(existing.version_id);
+  if (ownVersion) assertVersionOpen(ownVersion);
 
   // Once a report has been submitted against this template's format chain,
   // the KPI structure is locked — changing it would silently invalidate
   // already-submitted data. Metadata (title, end_year, etc.) stays editable.
-  const schemaChanged = !jsonEqual(req.body.json_schema, existing.json_schema);
+  const schemaChanged = req.body.json_schema !== undefined && !jsonEqual(req.body.json_schema, existing.json_schema);
   if (schemaChanged && await Template.hasSubmittedReports(existing.id)) {
     throw ApiError.conflict('This template already has submitted reports against it — its KPI structure can no longer be changed. Create a new report version instead.');
   }
 
-  success(res, await Template.update(req.params.id, req.body), 'Template updated');
+  success(res, await Template.update(req.params.id, { ...existing, ...defined(req.body) }), 'Template updated');
 });
 
 export const setTemplateActive = catchAsync(async (req, res) => {
@@ -101,13 +119,14 @@ export const createTemplatesForVersion = catchAsync(async (req, res) => {
   const version = await Template.findVersionById(req.body.version_id);
   if (!version) throw ApiError.notFound('Report version not found');
   deptGuard(req.user, version.dep_id);
+  assertVersionOpen(version);
 
   const result = await Template.createForAllTeams({
     version_id: version.id,
     dep_id: version.dep_id,
     title: req.body.title,
     type: req.body.type,
-    start_year: req.body.start_year,
+    start_year: req.body.start_year ?? version.year,
     end_year: req.body.end_year,
     templateVersion: req.body.templateVersion,
   }, req.user.id);
@@ -115,8 +134,11 @@ export const createTemplatesForVersion = catchAsync(async (req, res) => {
   success(res, result, `Created ${result.created.length} template(s)${result.skipped ? `, skipped ${result.skipped} team(s) that already had one` : ''}`);
 });
 
+/** ?open=true leaves out closed versions (the template-creation dropdowns); without it every version is listed. */
 export const listVersions = catchAsync(async (req, res) =>
-  success(res, await Template.listVersions(req.query.dep_id ? Number(req.query.dep_id) : undefined)));
+  success(res, await Template.listVersions(
+    req.query.dep_id ? Number(req.query.dep_id) : undefined,
+    { openOnly: req.query.open === 'true' || req.query.open === '1' })));
 
 export const getVersion = catchAsync(async (req, res) => {
   const v = await Template.getVersionTree(req.params.id, req.query.team_id ? Number(req.query.team_id) : undefined);
@@ -132,7 +154,19 @@ export const createVersion = catchAsync(async (req, res) => {
 });
 
 export const approveVersion = catchAsync(async (req, res) => {
+  const current = await Template.findVersionById(req.params.id);
+  if (current) assertVersionOpen(current);
   const v = await Template.approveVersion(req.params.id, req.user.id);
   if (!v) throw ApiError.notFound('Report version not found');
   success(res, v, 'Report version approved');
+});
+
+/** System Admin only: close a report version (e.g. at the end of the Ethiopian year). It can't be undone from the app. */
+export const closeVersion = catchAsync(async (req, res) => {
+  const current = await Template.findVersionById(req.params.id);
+  if (!current) throw ApiError.notFound('Report version not found');
+  if (current.closed_at) throw ApiError.conflict('This report version is already closed');
+  const v = await Template.closeVersion(req.params.id, req.user.id);
+  if (!v) throw ApiError.conflict('This report version is already closed');
+  success(res, v, 'Report version closed');
 });
