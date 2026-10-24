@@ -7,7 +7,8 @@ import User from '../models/User.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success, created, ApiError } from '../utils/apiResponse.js';
 import { ROLES, WOREDA_ROLES, ZONAL_ROLES, REVIEWER_ROLES } from '../constants/roles.js';
-import { STATUS, TRANSITIONS } from '../constants/status.js';
+import { STATUS, TRANSITIONS, WOREDA_ONLY } from '../constants/status.js';
+import { forwardIfComplete } from '../services/woredaSubmissionService.js';
 import { canAccessWoreda } from '../middlewares/rbacMiddleware.js';
 import { notify } from '../services/notificationService.js';
 import { woredaPlanScope, templateScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
@@ -77,8 +78,8 @@ async function loadAccessible(req) {
   const report = await Report.findById(req.params.id);
   if (!report) throw ApiError.notFound('Report not found');
   if (!(await canAccessWoreda(req.user, report.woreda_id))) throw ApiError.forbidden('Outside your administrative scope');
-  // a woreda's unsubmitted draft is its own working copy — zonal users can't see it
-  if (ZONAL_ROLES.includes(req.user.role) && report.status === STATUS.DRAFT) throw ApiError.notFound('Report not found');
+  // what is still inside the woreda (draft, waiting for / approved by the woreda plan expert) is not the zone's to see
+  if (ZONAL_ROLES.includes(req.user.role) && WOREDA_ONLY.includes(report.status)) throw ApiError.notFound('Report not found');
   return report;
 }
 
@@ -153,16 +154,67 @@ export const updateReport = catchAsync(async (req, res) => {
   success(res, result, 'Report saved');
 });
 
+/**
+ * A team member submits a report. It goes to the woreda's Plan Expert first (status pending_woreda); the zone only
+ * receives it when the plan expert has approved ALL of the woreda's team reports for that period (see woredaReview).
+ * Without a plan expert in the woreda's department — or when the plan expert files it themself — the approval
+ * step is skipped so nothing gets stuck. Reports without a report format (legacy) still go straight to the zone.
+ */
 export const submitReport = catchAsync(async (req, res) => {
   const report = await loadAccessible(req);
-  assertTransition(report.status, STATUS.SUBMITTED);
+  const format = report.format_id ? await ReportFormat.findById(report.format_id) : null;
+  assertTransition(report.status, format ? STATUS.PENDING_WOREDA : STATUS.SUBMITTED);
   if (report.type === 'monthly' && report.format_id && report.month) await assertWindowOpen(req.user, report);
-  const updated = await Report.setStatus(report.id, STATUS.SUBMITTED);
-  // notify zonal reviewers of the woreda's zone
-  const reviewers = await User.list({ zone_id: report.zone_id, limit: 200 });
-  await Promise.all(reviewers.filter((r) => REVIEWER_ROLES.includes(r.role)).map((r) =>
-    notify(r.id, `New report submitted: ${report.title}`, { report_id: report.id })));
-  success(res, updated, 'Report submitted');
+
+  if (!format) { // legacy: straight to the zone
+    const updated = await Report.setStatus(report.id, STATUS.SUBMITTED);
+    const reviewers = await User.list({ zone_id: report.zone_id, limit: 200 });
+    await Promise.all(reviewers.filter((r) => REVIEWER_ROLES.includes(r.role)).map((r) =>
+      notify(r.id, `New report submitted: ${report.title}`, { report_id: report.id })));
+    return success(res, updated, 'Report submitted');
+  }
+
+  const staff = await User.list({ woreda_id: report.woreda_id, department_id: format.department_id, limit: 200 });
+  const experts = staff.filter((x) => x.role === ROLES.WOREDA_PLAN_EXPERT && x.is_active !== false);
+  const selfApproves = !experts.length || req.user.role === ROLES.WOREDA_PLAN_EXPERT;
+  if (selfApproves) {
+    await Report.setStatus(report.id, STATUS.PENDING_WOREDA);
+    const updated = await Report.setWoredaStatus(report.id, STATUS.WOREDA_APPROVED, { userId: req.user.role === ROLES.WOREDA_PLAN_EXPERT ? req.user.id : null });
+    const outcome = await forwardIfComplete(updated, format);
+    return success(res, { report: updated, ...outcome }, outcome.forwarded ? 'Report submitted — the woreda has now submitted to the zone' : 'Report submitted');
+  }
+  const updated = await Report.setStatus(report.id, STATUS.PENDING_WOREDA);
+  await Promise.all(experts.map((x) => notify(x.id, `Report waiting for your approval: ${report.title}`, { report_id: report.id })));
+  success(res, updated, 'Report submitted to the woreda plan expert');
+});
+
+/**
+ * Woreda Plan Expert: approve a team report, or send it back to its author with feedback.
+ * When the last team report of the woreda for that period is approved, the woreda has submitted: all of them reach the zone.
+ */
+export const woredaReview = catchAsync(async (req, res) => {
+  const { action, feedback } = req.body;
+  const report = await loadAccessible(req);
+  const format = report.format_id ? await ReportFormat.findById(report.format_id) : null;
+  if (!format) throw ApiError.badRequest('Only reports filed against a report format go through the woreda approval');
+  if (req.user.role !== ROLES.ADMIN && !inScope(woredaPlanScope(req.user), format)) throw ApiError.forbidden(OUT_OF_SCOPE);
+
+  if (action === 'approve') {
+    if (report.status !== STATUS.PENDING_WOREDA) throw ApiError.conflict('Only a report waiting for the woreda plan expert can be approved');
+    const updated = await Report.setWoredaStatus(report.id, STATUS.WOREDA_APPROVED, { userId: req.user.id });
+    const outcome = await forwardIfComplete(updated, format);
+    await notify(report.created_by, outcome.forwarded
+      ? `Your report "${report.title}" was approved — all team reports are in, so the woreda has submitted to the zone`
+      : `Your report "${report.title}" was approved by the woreda plan expert`, { report_id: report.id });
+    return success(res, { report: await Report.findById(report.id), ...outcome },
+      outcome.forwarded ? 'Approved — every team report is in, so the woreda has submitted to the zone'
+        : outcome.waiting ? `Approved — waiting for ${outcome.waiting} more team report${outcome.waiting > 1 ? 's' : ''} before the woreda submits` : 'Approved');
+  }
+  if (![STATUS.PENDING_WOREDA, STATUS.WOREDA_APPROVED].includes(report.status)) throw ApiError.conflict('This report is no longer inside the woreda, so it can only be reviewed by the zone');
+  if (!feedback) throw ApiError.badRequest('Feedback is required when sending a report back');
+  const updated = await Report.setWoredaStatus(report.id, STATUS.REJECTED, { userId: req.user.id, feedback });
+  await notify(report.created_by, `Your report "${report.title}" was sent back by the woreda plan expert`, { report_id: report.id });
+  success(res, { report: updated, forwarded: false }, 'Report sent back to its author');
 });
 
 export const reviewReport = catchAsync(async (req, res) => {

@@ -12,12 +12,9 @@ import { templateScope, woredaPlanScope, inScope, OUT_OF_SCOPE } from '../utils/
 import { indicatorsOf } from '../utils/formatTree.js';
 import { hierarchyOf, hierarchyErrors, zoneTotalErrors, monthlyTotalErrors } from '../utils/planChecks.js';
 import { buildOverview } from '../utils/planOverview.js';
+import { MONTH_NAMES, PLAN_MONTHS, currentFiscalYear } from '../utils/periods.js';
 
 const num = (v) => (v ? Number(v) : undefined);
-
-// A monthly plan covers July → June; `month` is the calendar month number (July = 7 … June = 6).
-const MONTH_NAMES = { 1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June', 7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December' };
-const PLAN_MONTHS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
 
 /** Plans visible to the caller: woreda users see only their own woreda's cascaded plans; zonal users their zone's. */
 export const listPlans = catchAsync(async (req, res) => {
@@ -319,7 +316,7 @@ export const planOverview = catchAsync(async (req, res) => {
     ...(scope.all ? {} : { department_id: scope.department_id, team_id: scope.team_id }),
   });
   const years = [...new Set(approved.map((f) => f.version_year))].sort((a, b) => b - a);
-  const thisYear = new Date().getFullYear();
+  const thisYear = currentFiscalYear();
   const year = num(req.query.year) ?? (years.includes(thisYear) ? thisYear : years[0] ?? thisYear);
 
   const formats = approved.filter((f) => f.version_year === year);

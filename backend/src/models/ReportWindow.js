@@ -13,7 +13,7 @@ const SELECT = `
          (SELECT count(*) FROM woredas x WHERE x.zone_id = w.zone_id)::int AS woreda_count,
          (SELECT count(DISTINCT r.woreda_id) FROM reports r JOIN woredas x ON x.woreda_id = r.woreda_id
            WHERE x.zone_id = w.zone_id AND r.format_id = w.format_id AND r.year = w.year AND r.month = w.month
-             AND r.status <> 'draft')::int AS submitted_count
+             AND r.status NOT IN ('draft','pending_woreda','woreda_approved'))::int AS submitted_count
   FROM report_windows w
   JOIN report_formats rf ON rf.id = w.format_id
   JOIN report_templates t ON t.id = rf.template_id

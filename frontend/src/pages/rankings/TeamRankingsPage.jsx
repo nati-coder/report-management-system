@@ -41,7 +41,7 @@ export default function TeamRankingsPage() {
           <option>monthly</option><option>quarterly</option><option>annual</option>
         </select>
         <input type="number" className="input w-28" value={f.year} onChange={(e) => setF({ ...f, year: Number(e.target.value) })} />
-        {f.period_type === 'monthly' && <input type="number" min="1" max="12" className="input w-24" value={f.month} onChange={(e) => setF({ ...f, month: Number(e.target.value) })} />}
+        {f.period_type === 'monthly' && <select className="input w-32" value={f.month} onChange={(e) => setF({ ...f, month: Number(e.target.value) })}>{MONTH_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}</select>}
         {f.period_type === 'quarterly' && <input type="number" min="1" max="4" className="input w-24" value={f.quarter} onChange={(e) => setF({ ...f, quarter: Number(e.target.value) })} />}
       </div>
       {loading ? <Loader /> : <Table rows={f.woreda_id ? data : []} empty={f.woreda_id ? 'No ranking yet — recompute to generate.' : 'Select a woreda'}

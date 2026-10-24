@@ -58,9 +58,11 @@ const Ranking = {
     const { rows } = await query(
       `WITH r AS (
          SELECT rp.id, rp.team_id, rp.status, rp.submitted_at,
-                (make_date(rp.year, COALESCE(rp.month, rp.quarter * 3, 12), 1)
-                  + INTERVAL '1 month' + INTERVAL '4 days') AS deadline
+                                (make_date(rp.year + d.yr, d.mo, d.dy) + INTERVAL '4 days') AS deadline
          FROM reports rp
+         JOIN (VALUES (7,7,8,7),(8,7,9,11),(9,7,10,11),(10,7,11,10),(11,7,12,10),(12,8,1,9),
+                      (1,8,2,8),(2,8,3,10),(3,8,4,9),(4,8,5,9),(5,8,6,8),(6,8,7,8)) AS d(slot, yr, mo, dy)
+           ON d.slot = COALESCE(rp.month, (ARRAY[9,12,3,6])[rp.quarter], 6)
          WHERE rp.woreda_id = $1 AND rp.type = $2 AND rp.year = $3
            AND ($4::int IS NULL OR rp.month = $4) AND ($5::int IS NULL OR rp.quarter = $5)
            AND rp.team_id IS NOT NULL

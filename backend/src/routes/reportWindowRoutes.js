@@ -3,7 +3,7 @@ import { authenticate } from '../middlewares/authMiddleware.js';
 import { authorize } from '../middlewares/rbacMiddleware.js';
 import { audit } from '../middlewares/auditLogger.js';
 import { validate, schemas } from '../utils/validators.js';
-import { ROLES } from '../constants/roles.js';
+import { ROLES, ZONAL_ROLES } from '../constants/roles.js';
 import * as c from '../controllers/reportWindowController.js';
 
 const router = Router();
@@ -12,6 +12,12 @@ router.use(authenticate);
 // Reading is scoped inside the controller (zone, department, team); opening and changing periods is the zone's.
 const opener = authorize(ROLES.ZONAL_PLAN_EXPERT); // the Zonal Plan Expert opens, changes and removes periods (admin always passes)
 router.get('/', c.listWindows);
+// Periods = one entry per month for the zone (all teams together). Before '/:id'.
+const P = '/periods/:zone_id/:department_id/:year/:month';
+router.get('/periods', authorize(...ZONAL_ROLES), c.listPeriods);
+router.get(P, authorize(...ZONAL_ROLES), c.getPeriod);
+router.put(P, opener, validate(schemas.reportWindowUpdate), audit('report_window.update_period', 'report_window'), c.updatePeriod);
+router.delete(P, opener, audit('report_window.delete_period', 'report_window'), c.deletePeriod);
 router.get('/:id', authorize(ROLES.ZONAL_EXPERT, ROLES.ZONAL_TEAM_LEADER, ROLES.ZONAL_DEPT_HEAD, ROLES.ZONAL_PLAN_EXPERT), c.getWindow);
 router.post('/', opener, validate(schemas.reportWindow), audit('report_window.create', 'report_window'), c.createWindow);
 router.put('/:id', opener, validate(schemas.reportWindowUpdate), audit('report_window.update', 'report_window'), c.updateWindow);

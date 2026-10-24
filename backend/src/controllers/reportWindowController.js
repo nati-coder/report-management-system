@@ -9,6 +9,7 @@ import { ROLES, WOREDA_ROLES, ZONAL_ROLES } from '../constants/roles.js';
 import { notifyMany } from '../services/notificationService.js';
 import { templateScope, woredaPlanScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
 import { MONTH_NAMES, when } from '../utils/periods.js';
+import { periodProgress, windowsOfPeriod } from '../services/woredaSubmissionService.js';
 
 const num = (v) => (v ? Number(v) : undefined);
 
@@ -114,15 +115,20 @@ export const createWindow = catchAsync(async (req, res) => {
   if (closes <= opens) throw ApiError.badRequest('The deadline must be after the opening time');
   if (closes <= new Date()) throw ApiError.badRequest('The deadline is already in the past');
 
-  const opened = [];
+  // A month is ONE period for the zone: a format added to a month that is already open (a team whose format was
+  // approved later) joins it and takes its dates, so the zone never ends up with two deadlines for the same month.
+  const existing = (await ReportWindow.list({ zone_id, year })).filter((x) => x.month === month);
+  const opened = []; let joined = 0;
   for (const format of formats) {
-    const w = await openOne(format, { zone_id, year, month, opens, closes, userId: u.id });
+    const same = existing.find((x) => x.department_id === format.department_id);
+    if (same) joined++;
+    const w = await openOne(format, { zone_id, year, month, opens: same ? new Date(same.opens_at) : opens, closes: same ? new Date(same.closes_at) : closes, userId: u.id });
     if (w) opened.push(w);
   }
   if (!opened.length) throw ApiError.conflict(`${MONTH_NAMES[month]} ${year} is already open for ${formats.length > 1 ? 'all these report formats' : 'this report'}. Change its dates instead.`);
   res.locals.auditTargetId = opened[0].id;
   created(res, { count: opened.length, windows: opened },
-    `${MONTH_NAMES[month]} ${year} opened for reporting — ${opened.length} report format${opened.length > 1 ? 's' : ''}`);
+    `${MONTH_NAMES[month]} ${year} opened for reporting — ${opened.length} report format${opened.length > 1 ? 's' : ''}${joined && opened.length ? ' (added to the period that is already open, with its dates)' : ''}`);
 });
 
 /** Change the dates of a period — extend the deadline, or close it now. */
@@ -146,5 +152,91 @@ export const deleteWindow = catchAsync(async (req, res) => {
   const reports = await Report.findPeriod({ format_id: w.format_id, year: w.year, month: w.month, zone_id: w.zone_id });
   if (reports.length) throw ApiError.conflict('Woredas have already started reports in this period, so it can only be closed, not removed');
   await ReportWindow.remove(w.id);
+  success(res, null, 'Reporting period removed');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Periods — what the zone sees. A report_window is one team's format for one month; a PERIOD is the month itself:
+// one entry per zone + department + month, however many teams' formats it covers. A woreda has SUBMITTED to the
+// period when its Woreda Plan Expert has approved every team report it owes (see woredaSubmissionService).
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The period named in the URL, if the viewer may see it: its windows (every team) and the viewer's team filter. */
+async function loadPeriod(req) {
+  const { zone_id, department_id, year, month } = req.params;
+  const { zone_id: myZone, scope } = await viewerScope(req.user);
+  if (!scope) throw ApiError.forbidden(OUT_OF_SCOPE);
+  if (req.user.role !== ROLES.ADMIN && zone_id !== myZone) throw ApiError.forbidden('Outside your administrative scope');
+  if (!scope.all && Number(department_id) !== scope.department_id) throw ApiError.forbidden(OUT_OF_SCOPE);
+  const windows = await windowsOfPeriod({ zone_id, department_id: Number(department_id), year: Number(year), month: Number(month) });
+  if (!windows.length) throw ApiError.notFound('Reporting period not found');
+  return { windows, scope };
+}
+
+/** One period as the zone reads it: the month, its dates and state, the teams opened, and how many woredas have submitted. */
+function shapePeriod(windows, progress, scope) {
+  const w0 = windows.reduce((a, b) => (new Date(b.closes_at) > new Date(a.closes_at) ? b : a)); // dates are changed together; this is the latest
+  const visible = scope.team_id ? windows.filter((w) => w.team_id === scope.team_id) : windows; // a team's expert sees their own team
+  return {
+    zone_id: w0.zone_id, zone_name: w0.zone_name, department_id: w0.department_id, year: w0.year, month: w0.month,
+    opens_at: w0.opens_at, closes_at: w0.closes_at, state: w0.state,
+    teams: visible.map((w) => ({ window_id: w.id, format_id: w.format_id, team_id: w.team_id, team_name: w.team_name, template_title: w.template_title })),
+    woreda_count: progress.filter((p) => p.state !== 'no_plan').length,
+    submitted_count: progress.filter((p) => p.state === 'submitted').length,
+  };
+}
+
+/** GET /report-windows/periods — the zone's periods, one per month. */
+export const listPeriods = catchAsync(async (req, res) => {
+  const { year, zone_id } = req.query;
+  const { zone_id: myZone, scope } = await viewerScope(req.user);
+  const isAdmin = req.user.role === ROLES.ADMIN;
+  if (!scope || (!isAdmin && !myZone)) return success(res, []);
+  const rows = await ReportWindow.list({ zone_id: isAdmin ? zone_id : myZone, year: num(year), department_id: scope.department_id });
+  const groups = new Map();
+  for (const w of rows) {
+    const k = [w.zone_id, w.department_id, w.year, w.month].join('|');
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(w);
+  }
+  const periods = await Promise.all([...groups.values()].map(async (windows) => shapePeriod(windows, await periodProgress(windows), scope)));
+  success(res, periods.sort((a, b) => new Date(b.closes_at) - new Date(a.closes_at)));
+});
+
+/** GET /report-windows/periods/:zone_id/:department_id/:year/:month — the period with every woreda and its team reports. */
+export const getPeriod = catchAsync(async (req, res) => {
+  const { windows, scope } = await loadPeriod(req);
+  const progress = await periodProgress(windows);
+  const period = shapePeriod(windows, progress, scope);
+  const mine = new Set(period.teams.map((t) => t.format_id));
+  success(res, { ...period, woredas: progress.map((p) => ({ ...p, teams: p.teams.filter((t) => mine.has(t.format_id)) })) });
+});
+
+/** PUT …/periods/… — move the dates of the whole month (every team's window together). */
+export const updatePeriod = catchAsync(async (req, res) => {
+  const { windows } = await loadPeriod(req);
+  const w0 = windows[0];
+  const opens = req.body.opens_at ? parseWhen(req.body.opens_at, 'The opening time') : new Date(w0.opens_at);
+  const closes = req.body.closes_at ? parseWhen(req.body.closes_at, 'The deadline') : new Date(w0.closes_at);
+  if (closes <= opens) throw ApiError.badRequest('The deadline must be after the opening time');
+  const extended = windows.some((w) => closes > new Date(w.closes_at));
+  for (const w of windows) await ReportWindow.update(w.id, { opens_at: req.body.opens_at ? opens : null, closes_at: req.body.closes_at ? closes : null });
+  if (extended) {
+    const ids = [];
+    for (const w of windows) ids.push(...await recipientsOf(w.zone_id, await ReportFormat.findById(w.format_id)));
+    await notifyMany(ids, `Deadline extended: ${MONTH_NAMES[w0.month]} ${w0.year} can now be submitted until ${when(closes)}.`, { year: w0.year, month: w0.month });
+  }
+  success(res, null, 'Reporting period updated');
+});
+
+/** DELETE …/periods/… — remove a month nobody has reported in. */
+export const deletePeriod = catchAsync(async (req, res) => {
+  const { windows } = await loadPeriod(req);
+  for (const w of windows) {
+    if ((await Report.findPeriod({ format_id: w.format_id, year: w.year, month: w.month, zone_id: w.zone_id })).length) {
+      throw ApiError.conflict('Woredas have already started reports in this period, so it can only be closed, not removed');
+    }
+  }
+  for (const w of windows) await ReportWindow.remove(w.id);
   success(res, null, 'Reporting period removed');
 });

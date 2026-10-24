@@ -3,7 +3,7 @@ import Header from '../../components/layout/Header.jsx';
 import Table from '../../components/common/Table.jsx';
 import Loader from '../../components/common/Loader.jsx';
 import ReportTabs from '../../components/reports/ReportTabs.jsx';
-import ReportStatusBadge from '../../components/reports/ReportStatusBadge.jsx';
+import ReportStatusBadge, { statusLabel } from '../../components/reports/ReportStatusBadge.jsx';
 import useReports from '../../hooks/useReports.js';
 import useFetch from '../../hooks/useFetch.js';
 import useAuth from '../../hooks/useAuth.js';
@@ -41,7 +41,7 @@ export default function ReportListPage() {
   ];
 
   // Zonal users only ever see what a woreda has submitted — drafts stay with the woreda.
-  const statuses = browsesWoredas && user.zone_id ? ['submitted', 'reviewing', 'approved', 'rejected'] : ['draft', 'submitted', 'reviewing', 'approved', 'rejected'];
+  const statuses = browsesWoredas && user.zone_id ? ['submitted', 'reviewing', 'approved', 'rejected'] : ['draft', 'pending_woreda', 'woreda_approved', 'submitted', 'reviewing', 'approved', 'rejected'];
 
   return (
     <>
@@ -54,7 +54,7 @@ export default function ReportListPage() {
       <div className="mb-4 flex flex-wrap gap-3">
         <select className="input w-44" value={filters.status || ''} onChange={(e) => setFilter('status', e.target.value)}>
           <option value="">All statuses</option>
-          {statuses.map((s) => <option key={s}>{s}</option>)}
+          {statuses.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </select>
         {browsesWoredas && (
           <select className="input w-52" value={filters.woreda_id || ''} onChange={(e) => setFilter('woreda_id', e.target.value)}>

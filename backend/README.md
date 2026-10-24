@@ -19,11 +19,12 @@ Change the seeded admin password immediately.
 | `/users` | user admin, `reference-data` (zones/woredas/departments/teams) |
 | `/reference` | read-only zones → woredas, departments → teams |
 | `/templates` | report_templates (JSON schema) + `/versions` (report_version / report_formats tree) |
-| `/reports` | draft → submit → review (start_review / approve / reject); `/plans/:id` |
+| `/reports` | draft → submit → woreda plan expert approves (`/:id/woreda-review`) → zone review (start_review / approve / reject); `/plans/:id` |
 | `/rankings` | `/teams` (score, compute, list), `/woredas` (manual rank by Plan Expert) |
 | `/support-requests` | create, assign, status, 1–5 feedback |
 | `/imports` | Excel upload (multipart field `file` + woreda_id, team_id, report_version_id) |
 | `/report-formats` | report formats per template: Zonal Expert / Team Leader create + edit drafts and submit; Zonal Dept Head approves/rejects (`/:id/review`) |
+| `/report-windows` | reporting periods: `GET /periods` = one entry per month for the zone (all teams together); `GET/PUT/DELETE /periods/:zone_id/:department_id/:year/:month` = the month with every woreda's progress, move its dates, remove it. `/` and `/:id` are the per-team windows underneath |
 | `/plans` | `GET` plans visible to the caller; `POST /plans/cascade` (Zonal Expert) cascades an annual plan from an approved format to woredas in their zone; `POST /plans/:id/review` (Woreda Dept Head) accepts or rejects a cascaded plan |
 
 ## Excel import layout
@@ -119,3 +120,12 @@ Columns are *No. | Title | Measurement*; numbers are written with a trailing dot
 CSV is UTF-8 with a BOM (Amharic opens correctly in Excel) and neutralises cells that start with `= + - @` so they can't run as formulas.
 Excel (built with `exceljs`) has a title block, bold headings, indentation by depth, column widths, a frozen header, and print setup (A4, fit to width, header row repeats on every page).
 On screen, an approved format is shown as this table, with **Download Excel / Download CSV / Print**; printing hides the app chrome and always prints on white, even in dark mode.
+
+## Woreda approval, and one period per month (migration 0006)
+
+**Report path.** A team member submits a report → `pending_woreda`. The **Woreda Plan Expert** of that department approves it (`POST /reports/:id/woreda-review { action: 'approve' }` → `woreda_approved`) or sends it back (`{ action: 'reject', feedback }` → `rejected`, the author edits and resubmits). While a report is `draft`, `pending_woreda` or `woreda_approved` it is **invisible to the zone** (lists, the all-woredas sheet, `GET /reports/:id`).
+
+**The woreda submits when its last team report is approved.** A woreda owes one report per team format of the period for which it has an accepted annual plan. When the plan expert approves the last of them, all of the woreda's `woreda_approved` reports move to `submitted` together (`submitted_at` = that moment, which is what "on time / late" is measured from) and the zone's reviewers of that department are notified once (`services/woredaSubmissionService.js`). A rejected-then-fixed report goes through the same step, so the woreda re-submits when it is approved again.
+Fallbacks so nothing gets stuck: a woreda with no plan expert in that department skips the approval step; a plan expert's own report counts as approved by them; reports with no report format (legacy) still go straight to the zone.
+
+**One period per month.** `report_windows` stays one row per team format (that is what enforces the open/close times on reports). The zone sees a **period** = zone + department + month, however many teams it covers: `GET /report-windows/periods`. A woreda counts as *submitted* only when all its team reports have reached the zone; the detail endpoint lists, per woreda, its state (`submitted` / `in_progress` with `approved of expected` / `not_started` / `no_plan`) and each team's report status. Changing dates or removing a period applies to every team's window of that month. Opening a format for a month that is already open adds it to that period with the period's dates.

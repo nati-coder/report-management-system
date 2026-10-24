@@ -12,7 +12,7 @@ Everything is scoped by the signed-in user's **zone, department and team**.
 - **Annual plan, zone first**: the Zonal Expert sets the zone plan, then plans each woreda. Woreda totals must add up to the zone plan, and each parent item must equal the sum of its sub-items. Cascading notifies the woreda and locks its plan.
 - **Plan acceptance**: the Woreda Department Head accepts a cascaded plan (which locks it) or rejects it with a reason, sending it back to the zone to revise and cascade again.
 - **Reports based on the plan**: a woreda can only file a report against a plan it has accepted. The entry form shows only the planned items with their targets, and the server validates every entry.
-- **Review workflow**: draft → submitted → in review → approved or rejected, with notifications.
+- **Review workflow**: draft → awaiting woreda plan expert → approved by woreda → (woreda submits) → in review → approved or rejected, with notifications.
 - **Scoring and rankings**: team scores (`0.4·timeliness + 0.3·accuracy + 0.3·quality`) and manual woreda ranking.
 - **Excel import**, **support requests** with feedback, an **audit log**, and **tamper-evident rows** (SHA-256 `row_hash` on formats, plans and reports).
 
@@ -32,8 +32,11 @@ Everything is scoped by the signed-in user's **zone, department and team**.
 4. **Zonal Expert** builds the report format; the Dept Head approves it.
 5. **Zonal Expert** makes the annual plan: the zone plan first, then each woreda from a dropdown. Cascading notifies the woreda and locks its plan.
 6. **Woreda Dept Head** accepts or rejects the cascaded plan.
-7. **Woreda users** file reports against the accepted plan and submit them.
-8. **Zonal Expert** reviews, approves or rejects the submitted reports. Team scoring and rankings sit alongside this.
+7. **Woreda team members** file reports against the accepted plan and submit them to their **Woreda Plan Expert**.
+8. **Woreda Plan Expert** approves each team report (or sends it back). When the last team report of the woreda for that month is approved, the woreda has **submitted** and all its reports reach the zone together.
+9. **Zonal Expert** reviews, approves or rejects the submitted reports. Team scoring and rankings sit alongside this.
+
+The zone sees each month as **one reporting period**; "Show woredas" lists every woreda, whether it has submitted, and where each team's report stands.
 
 ## Tech stack
 
@@ -95,7 +98,6 @@ backend/
   src/
     controllers/ routes/ models/ middlewares/ services/
     utils/       validators, scope rules, plan checks, format tree helpers
-  scripts/       check-woreda-plans.mjs (diagnoses what the API returns to a woreda user)
 frontend/
   src/
     pages/       dashboards, formats, plans, reports, rankings, admin
@@ -116,7 +118,7 @@ Not built yet, in rough order:
 - Plan versus actual: compare reported figures with the plan on the zone side.
 - Woreda downloads: let woreda users download and print a format.
 - Report scoping: narrow zonal experts to their own team's reports (they currently see every team's reports in their zone).
-- Other periods: monthly and quarterly plans.
+- Quarterly and half-year *plans* as their own cascade (monthly plans and monthly reporting periods exist; quarter/half/annual reports are summed from the months).
 - Old role names: update any users created as `plan_expert` or `team_leader`.
 
 ## Contributing

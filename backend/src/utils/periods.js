@@ -3,7 +3,7 @@
  * Quarterly, half-year and annual reports are not filed separately: they are summed up from the monthly ones.
  */
 export const PLAN_MONTHS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
-export const MONTH_NAMES = { 1: 'January', 2: 'February', 3: 'March', 4: 'April', 5: 'May', 6: 'June', 7: 'July', 8: 'August', 9: 'September', 10: 'October', 11: 'November', 12: 'December' };
+export const MONTH_NAMES = { 7: 'Hamle', 8: 'Nehase', 9: 'Meskerem', 10: 'Tikimt', 11: 'Hidar', 12: 'Tahsas', 1: 'Tir', 2: 'Yekatit', 3: 'Megabit', 4: 'Miazia', 5: 'Genbot', 6: 'Sene' };
 
 export const RANGES = {
   q1: { label: 'Quarter 1 (July–September)', months: [7, 8, 9] },
@@ -41,3 +41,11 @@ export const when = (d) => new Date(d).toLocaleString('en-GB', { timeZone: 'Afri
 
 /** Reports are filed month by month for a monthly template, and for an ANNUAL one (the zonal plan expert opens its months). */
 export const filedMonthly = (templateType) => templateType === 'monthly' || templateType === 'annual';
+
+/** Ethiopian fiscal year of a date: 2019 = Hamle 2018 → Sene 2019. */
+export function currentFiscalYear(d = new Date()) {
+  const p = new Intl.DateTimeFormat('en-US-u-ca-ethiopic-nu-latn', { year: 'numeric', month: 'numeric', timeZone: 'Africa/Addis_Ababa' }).formatToParts(d);
+  const y = Number(p.find((x) => x.type === 'year').value);
+  const m = Number(p.find((x) => x.type === 'month').value);
+  return m >= 11 ? y + 1 : y; // Hamle (11), Nehase (12), Pagume (13) belong to the next fiscal year
+}

@@ -11,7 +11,7 @@ const Report = {
     if (year) add('r.year = ?', year);
     if (team_id) add('r.team_id = ?', team_id);
     if (created_by) add('r.created_by = ?', created_by);
-    if (excludeDraft) cond.push("r.status <> 'draft'");
+    if (excludeDraft) cond.push("r.status NOT IN ('draft','pending_woreda','woreda_approved')"); // zone users: only what the woreda has submitted
     p.push(limit, offset);
     const { rows } = await query(
       `SELECT r.id, r.format_id, r.title, r.type, r.year, r.quarter, r.month, r.woreda_id, r.team_id,
@@ -36,7 +36,7 @@ const Report = {
     const { rows } = await query(
       `SELECT r.id, r.woreda_id, r.status, r.data, r.submitted_at, r.created_at
        FROM reports r
-       WHERE r.format_id = $1 AND r.year = $2 AND r.woreda_id = ANY($3) AND r.status <> 'draft' ${period}
+       WHERE r.format_id = $1 AND r.year = $2 AND r.woreda_id = ANY($3) AND r.status NOT IN ('draft','pending_woreda','woreda_approved') ${period}
        ORDER BY r.created_at DESC`, p);
     const latest = new Map();
     for (const r of rows) if (!latest.has(r.woreda_id)) latest.set(r.woreda_id, r);
@@ -57,7 +57,7 @@ const Report = {
   async sheetMonths({ format_id, year, months, woredaIds }) {
     const { rows } = await query(
       `SELECT r.id, r.woreda_id, r.month, r.status, r.data, r.created_at FROM reports r
-       WHERE r.format_id = $1 AND r.year = $2 AND r.month = ANY($3) AND r.woreda_id = ANY($4) AND r.status <> 'draft'
+       WHERE r.format_id = $1 AND r.year = $2 AND r.month = ANY($3) AND r.woreda_id = ANY($4) AND r.status NOT IN ('draft','pending_woreda','woreda_approved')
        ORDER BY r.created_at DESC`, [format_id, year, months, woredaIds]);
     const latest = new Map();
     for (const r of rows) { const k = `${r.woreda_id}|${r.month}`; if (!latest.has(k)) latest.set(k, r); }
@@ -86,7 +86,7 @@ const Report = {
   async setStatus(id, status, { reviewerId, feedback } = {}) {
     const { rows } = await query(
       `UPDATE reports SET status = $1::varchar,
-         submitted_at = CASE WHEN $1::varchar = 'submitted' THEN CURRENT_TIMESTAMP ELSE submitted_at END,
+         submitted_at = CASE WHEN $1::varchar IN ('submitted','pending_woreda') THEN CURRENT_TIMESTAMP ELSE submitted_at END,
          reviewed_by = COALESCE($2::int, reviewed_by),
          feedback = COALESCE($3, feedback),
          updated_at = CURRENT_TIMESTAMP
@@ -96,6 +96,31 @@ const Report = {
   },
   async remove(id) {
     await query('DELETE FROM reports WHERE id = $1', [id]);
+  },
+  /** The woreda plan expert's decision: approve (status woreda_approved) or send back (rejected, with feedback). */
+  async setWoredaStatus(id, status, { userId, feedback } = {}) {
+    const approved = status === 'woreda_approved';
+    const { rows } = await query(
+      `UPDATE reports SET status = $1::varchar,
+         woreda_approved_by = CASE WHEN $5::boolean THEN $2::int ELSE NULL END,
+         woreda_approved_at = CASE WHEN $5::boolean THEN CURRENT_TIMESTAMP ELSE NULL END,
+         feedback = COALESCE($3, feedback), updated_at = CURRENT_TIMESTAMP
+       WHERE id = $4 RETURNING *`, [status, userId ?? null, feedback ?? null, id, approved]);
+    return rows[0] || null;
+  },
+  /** The woreda has submitted: its approved team reports go to the zone together. */
+  async forward(ids) {
+    await query(`UPDATE reports SET status = 'submitted', submitted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ANY($1) AND status = 'woreda_approved'`, [ids]);
+  },
+  /** The latest report of each (format, woreda) of a zone for one month — what a reporting period is built from. */
+  async forPeriod({ format_ids, year, month, zone_id }) {
+    const { rows } = await query(
+      `SELECT DISTINCT ON (r.format_id, r.woreda_id) r.id, r.format_id, r.woreda_id, r.status, r.submitted_at
+       FROM reports r JOIN woredas w ON w.woreda_id = r.woreda_id
+       WHERE r.format_id = ANY($1) AND r.year = $2 AND r.month = $3 AND w.zone_id = $4
+       ORDER BY r.format_id, r.woreda_id, r.created_at DESC`, [format_ids, year, month, zone_id]);
+    return rows;
   },
 
   // ---- LEGACY annual plan values (used by the existing Excel-import

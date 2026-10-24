@@ -6,13 +6,13 @@ export const monthName = (n) => MONTH_NAMES[MONTH_NUMBERS.indexOf(Number(n))] ??
 export const MONTH_OPTIONS = MONTH_NAMES.map((label, i) => ({ value: MONTH_NUMBERS[i], label }));
 /** Quarterly, half-year and annual summaries are built from the monthly reports. */
 export const RANGE_OPTIONS = [
-  { value: 'q1', label: 'Quarter 1 (July–September)' },
-  { value: 'q2', label: 'Quarter 2 (October–December)' },
-  { value: 'q3', label: 'Quarter 3 (January–March)' },
-  { value: 'q4', label: 'Quarter 4 (April–June)' },
-  { value: 'h1', label: 'Half year 1 (July–December)' },
-  { value: 'h2', label: 'Half year 2 (January–June)' },
-  { value: 'annual', label: 'Annual (July–June)' },
+  { value: 'q1', label: 'Quarter 1 (Hamle–Meskerem)' },
+  { value: 'q2', label: 'Quarter 2 (Tikimt–Tahsas)' },
+  { value: 'q3', label: 'Quarter 3 (Tir–Megabit)' },
+  { value: 'q4', label: 'Quarter 4 (Miazia–Sene)' },
+  { value: 'h1', label: 'Half year 1 (Hamle–Tahsas)' },
+  { value: 'h2', label: 'Half year 2 (Tir–Sene)' },
+  { value: 'annual', label: 'Annual (Hamle–Sene)' },
 ];
 
 export const fmtDateTime = (d) => (d ? new Date(d).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : '—');
@@ -33,4 +33,12 @@ export function timeLeft(closesAt) {
   if (h < 1) return `${Math.max(1, Math.floor(ms / 60000))} min left`;
   if (h < 48) return `${h} hour${h === 1 ? '' : 's'} left`;
   return `${Math.floor(h / 24)} days left`;
+}
+
+/** Ethiopian fiscal year of a date: 2019 = Hamle 2018 → Sene 2019. */
+export function currentFiscalYear(d = new Date()) {
+  const p = new Intl.DateTimeFormat('en-US-u-ca-ethiopic-nu-latn', { year: 'numeric', month: 'numeric', timeZone: 'Africa/Addis_Ababa' }).formatToParts(d);
+  const y = Number(p.find((x) => x.type === 'year').value);
+  const m = Number(p.find((x) => x.type === 'month').value);
+  return m >= 11 ? y + 1 : y; // Hamle (11), Nehase (12), Pagume (13) belong to the next fiscal year
 }

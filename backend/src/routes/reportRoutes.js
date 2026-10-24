@@ -16,6 +16,7 @@ router.get('/:id', c.getReport);
 router.post('/', authorize(...WOREDA_ROLES), validate(schemas.report), audit('report.create', 'report'), c.createReport);
 router.put('/:id', authorize(...WOREDA_ROLES), validate(schemas.reportUpdate), audit('report.update', 'report'), c.updateReport);
 router.post('/:id/submit', authorize(...WOREDA_ROLES), audit('report.submit', 'report'), c.submitReport);
+router.post('/:id/woreda-review', authorize(ROLES.WOREDA_PLAN_EXPERT), validate(schemas.woredaReview), audit('report.woreda_review', 'report'), c.woredaReview);
 router.post('/:id/review', authorize(...REVIEWER_ROLES), validate(schemas.review), audit('report.review', 'report'), c.reviewReport);
 router.delete('/:id', authorize(...WOREDA_ROLES), audit('report.delete', 'report'), c.deleteReport);
 

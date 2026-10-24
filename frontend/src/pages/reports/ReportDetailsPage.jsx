@@ -49,6 +49,8 @@ export default function ReportDetailsPage() {
   const editable = isWoredaUser(user) && ['draft', 'rejected'].includes(report.status) && periodOpen && (!isMonthly || !!monthPlan);
   const canSubmit = editable && report.status === 'draft' && WOREDA_ROLES.includes(user.role);
   const canReview = isZonalUser(user) || user.role === ROLES.ADMIN;
+  // The woreda plan expert approves each team report; the woreda submits to the zone when all of them are approved.
+  const isWoredaPlanExpert = user.role === ROLES.WOREDA_PLAN_EXPERT || user.role === ROLES.ADMIN;
 
   const run = async (fn, msg) => { try { await fn(); success(msg); reload(); } catch (e) { error(errorMessage(e)); } };
   const save = async (data) => { setSaving(true); await run(() => reportService.update(id, { data }), 'Draft saved'); setSaving(false); };
@@ -58,11 +60,21 @@ export default function ReportDetailsPage() {
     run(() => reportService.review(id, { action, feedback }), `Report ${action}`);
   };
 
+  const woredaReview = async (action) => {
+    let feedback;
+    if (action === 'reject') { feedback = window.prompt('Reason for sending it back (required):'); if (!feedback) return; }
+    try { const r = await reportService.woredaReview(id, { action, feedback }); success(action === 'reject' ? 'Report sent back to its author'
+      : r?.forwarded ? 'Approved — every team report is in, so the woreda has submitted to the zone'
+        : r?.waiting ? `Approved — waiting for ${r.waiting} more team report${r.waiting > 1 ? 's' : ''} before the woreda submits` : 'Approved'); reload(); } catch (e) { error(errorMessage(e)); }
+  };
+
   return (
     <>
       <Header title={report.title} subtitle={`${report.woreda_name} · ${format?.team_name ? `${format.team_name} · ` : ''}${report.type} · ${report.year}${monthName ? ` · ${monthName}` : report.quarter ? ` · Q${report.quarter}` : ''}`}
         actions={<ReportStatusBadge status={report.status} />} />
       {report.feedback && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">Reviewer feedback: {report.feedback}</p>}
+      {report.status === 'pending_woreda' && <p className="mb-4 rounded-lg bg-purple-50 p-3 text-sm text-purple-800 dark:bg-purple-900/20 dark:text-purple-300">Waiting for the woreda plan expert. The woreda submits to the zone once every team's report is approved.</p>}
+      {report.status === 'woreda_approved' && <p className="mb-4 rounded-lg bg-blue-50 p-3 text-sm text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">Approved by the woreda plan expert. It reaches the zone together with the woreda's other team reports.</p>}
       {isMonthly && period && (
         <p className={`mb-4 rounded-lg p-3 text-sm ${period.state === 'open' ? 'bg-blue-50 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'}`}>
           {period.state === 'open' && `${monthName} reporting is open until ${fmtDateTime(period.closes_at)} (${timeLeft(period.closes_at)}).`}
@@ -88,7 +100,9 @@ export default function ReportDetailsPage() {
           planLabel={isMonthly ? `Plan (${monthName})` : 'Plan (annual)'} initialData={report.data || {}} readOnly={!editable} saving={saving} onSave={save} />
       </Card>
       <div className="mt-4 flex flex-wrap gap-3">
-        {canSubmit && <Button onClick={() => run(() => reportService.submit(id), 'Report submitted')}>Submit for review</Button>}
+        {canSubmit && <Button onClick={() => run(() => reportService.submit(id), 'Report submitted')}>{user.role === ROLES.WOREDA_PLAN_EXPERT ? 'Submit' : 'Submit for approval'}</Button>}
+        {isWoredaPlanExpert && report.status === 'pending_woreda' && <Button onClick={() => woredaReview('approve')}>Approve</Button>}
+        {isWoredaPlanExpert && ['pending_woreda', 'woreda_approved'].includes(report.status) && <Button variant="danger" onClick={() => woredaReview('reject')}>Send back</Button>}
         {canReview && report.status === 'submitted' && <Button onClick={() => review('start_review')}>Start review</Button>}
         {canReview && report.status === 'reviewing' && <>
           <Button onClick={() => review('approve')}>Approve</Button>

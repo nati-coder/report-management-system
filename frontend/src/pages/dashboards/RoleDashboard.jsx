@@ -6,13 +6,16 @@ import useReports from '../../hooks/useReports.js';
 import useAuth from '../../hooks/useAuth.js';
 import useFetch from '../../hooks/useFetch.js';
 import Badge from '../../components/common/Badge.jsx';
+import { statusLabel, STATUS_TONE } from '../../components/reports/ReportStatusBadge.jsx';
 import * as reportWindowService from '../../services/reportWindowService.js';
 import { isWoredaUser } from '../../utils/roleHelpers.js';
 import { monthName, fmtDateTime, timeLeft } from '../../utils/periods.js';
 import { ROLE_LABEL } from '../../utils/roleHelpers.js';
 import { getLang } from '../../utils/formatters.js';
 
-const STATUSES = ['draft', 'submitted', 'reviewing', 'approved', 'rejected'];
+const ZONE_STATUSES = ['draft', 'submitted', 'reviewing', 'approved', 'rejected'];
+// A woreda's reports pass its Woreda Plan Expert before they reach the zone.
+const WOREDA_STATUSES = ['draft', 'pending_woreda', 'woreda_approved', 'submitted', 'reviewing', 'approved', 'rejected'];
 
 /** Shared dashboard: status counters + role-specific quick actions */
 export default function RoleDashboard({ actions = [] }) {
@@ -20,6 +23,7 @@ export default function RoleDashboard({ actions = [] }) {
   const { data, loading, error } = useReports({ limit: 200 });
   // Woreda users: the months the zone has open for reporting, with the deadline and where their own report stands.
   const woreda = isWoredaUser(user);
+  const STATUSES = woreda ? WOREDA_STATUSES : ZONE_STATUSES;
   const { data: openPeriods } = useFetch(() => (woreda ? reportWindowService.list({ open: true }) : Promise.resolve([])), [woreda]);
   const mine = (w) => (data || []).find((r) => r.format_id === w.format_id && r.year === w.year && r.month === w.month);
   const counts = Object.fromEntries(STATUSES.map((s) => [s, (data || []).filter((r) => r.status === s).length]));
@@ -28,9 +32,9 @@ export default function RoleDashboard({ actions = [] }) {
     <>
       <Header title={`Welcome, ${user.name}`} subtitle={ROLE_LABEL[user.role]?.[getLang()]} />
       {loading ? <Loader /> : error ? <p className="text-red-600">{error}</p> : (
-        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-5">
+        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           {STATUSES.map((s) => (
-            <Card key={s}><p className="text-xs uppercase text-slate-500 dark:text-slate-400">{s}</p><p className="mt-1 text-2xl font-semibold dark:text-slate-100">{counts[s]}</p></Card>
+            <Card key={s}><p className="text-xs uppercase text-slate-500 dark:text-slate-400">{statusLabel(s)}</p><p className="mt-1 text-2xl font-semibold dark:text-slate-100">{counts[s]}</p></Card>
           ))}
         </div>
       )}
@@ -47,7 +51,7 @@ export default function RoleDashboard({ actions = [] }) {
                     <div className="text-xs text-slate-500 dark:text-slate-400">Deadline {fmtDateTime(w.closes_at)} · {timeLeft(w.closes_at)}</div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {filed ? <Badge tone="green">{r.status}</Badge> : <Badge tone={r ? 'amber' : 'red'}>{r ? (r.status === 'rejected' ? 'rejected — fix and resubmit' : 'draft — not submitted') : 'not started'}</Badge>}
+                    {filed ? <Badge tone={STATUS_TONE[r.status] || 'green'}>{statusLabel(r.status)}</Badge> : <Badge tone={r ? 'amber' : 'red'}>{r ? (r.status === 'rejected' ? 'rejected — fix and resubmit' : 'draft — not submitted') : 'not started'}</Badge>}
                     {!filed && <Link to={r ? `/reports/${r.id}` : '/reports/new'} className="rounded-lg bg-brand-600 px-3 py-1.5 text-xs text-white hover:bg-brand-700">{r ? 'Continue' : 'Start report'}</Link>}
                   </div>
                 </li>

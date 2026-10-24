@@ -248,6 +248,10 @@ export const schemas = {
     action: z.enum(['start_review', 'approve', 'reject']),
     feedback: z.string().max(2000).optional(),
   }),
+  woredaReview: z.object({
+    action: z.enum(['approve', 'reject']),
+    feedback: z.string().max(2000).optional(),
+  }),
   teamScore: z.object({
     report_id: id,
     score: z.number().min(0),
