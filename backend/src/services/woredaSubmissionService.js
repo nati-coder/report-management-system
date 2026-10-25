@@ -6,6 +6,7 @@ import User from '../models/User.js';
 import { WITH_ZONE } from '../constants/status.js';
 import { REVIEWER_ROLES, ROLES } from '../constants/roles.js';
 import { notifyMany } from './notificationService.js';
+import { withAdvisoryLock } from '../../config/db.js';
 import { MONTH_NAMES } from '../utils/periods.js';
 
 const READY = ['woreda_approved', ...WITH_ZONE];
@@ -53,6 +54,14 @@ export async function windowsOfPeriod({ zone_id, department_id, year, month }) {
 }
 
 /**
+ * Run `fn` while no other request is approving a report of the same woreda and month. Without it two plan-expert
+ * approvals landing together can each see the other team's report as not yet approved, so neither forwards the
+ * woreda and its reports stay stuck inside it.
+ */
+export const withPeriodLock = (report, fn) =>
+  withAdvisoryLock(`woreda-period:${report.woreda_id}:${report.year}:${report.month}`, fn);
+
+/**
  * Called after the Woreda Plan Expert approves a team report: when every team report the woreda owes for that
  * period is approved, they all move to 'submitted' together — the woreda has submitted — and the zone is told.
  */
@@ -67,9 +76,10 @@ export async function forwardIfComplete(report, format) {
   const ids = mine.teams.filter((t) => t.status === 'woreda_approved').map((t) => t.report_id);
   if (!ids.length) return { forwarded: false, waiting: 0 };
   await Report.forward(ids);
-  const staff = await User.list({ zone_id: woreda.zone_id, limit: 200 });
+  // filter by role in SQL: a plain "latest 200 users of the zone" list can miss the reviewers entirely in a big zone
+  const staff = await User.list({ zone_id: woreda.zone_id, roles: REVIEWER_ROLES.filter((r) => r !== ROLES.ADMIN), activeOnly: true, limit: 1000 });
   await notifyMany(
-    staff.filter((u) => (REVIEWER_ROLES.includes(u.role) && u.role !== ROLES.ADMIN) && (!u.department_id || u.department_id === format.department_id)).map((u) => u.id),
+    staff.filter((u) => !u.department_id || u.department_id === format.department_id).map((u) => u.id),
     `${woreda.name} has submitted its ${MONTH_NAMES[report.month]} ${report.year} reports (${mine.teams.length} team${mine.teams.length > 1 ? 's' : ''}).`,
     { woreda_id: report.woreda_id, year: report.year, month: report.month });
   return { forwarded: true, count: ids.length };

@@ -13,10 +13,14 @@ import api, { unwrap, errorMessage } from '../../services/api.js';
 import { useNotify } from '../../context/NotificationContext.jsx';
 import { ROLES } from '../../utils/roleHelpers.js';
 import { formatDate } from '../../utils/formatters.js';
+import { currentFiscalYear } from '../../utils/periods.js';
 
-const EMPTY = { title: '', year: new Date().getFullYear(), versionNumber: '1.0', department_id: '' };
+const EMPTY = { title: '', year: currentFiscalYear(), versionNumber: '1.0', department_id: '' };
 
-/** Report Versions: annual reporting cycles. Admin / Zonal Dept Head create and approve them. */
+/**
+ * Report Versions: annual reporting cycles (Ethiopian fiscal year). Admin / Zonal Dept Head create and approve them;
+ * only the System Admin closes one — normally after Sene, when no more templates or updates should be made.
+ */
 export default function ReportVersionsPage() {
   const { user } = useAuth();
   const { success, error: notifyError } = useNotify();
@@ -33,7 +37,8 @@ export default function ReportVersionsPage() {
     setSaving(true);
     try {
       await unwrap(api.post('/templates/versions', {
-        name: `v${form.versionNumber} — ${form.title}`,
+        // the title is optional: without one the version is just "v1.0"
+        name: form.title.trim() ? `v${form.versionNumber} — ${form.title.trim()}` : `v${form.versionNumber}`,
         year: Number(form.year),
         dep_id: Number(form.department_id),
         nodes: [],
@@ -49,18 +54,29 @@ export default function ReportVersionsPage() {
     catch (err) { notifyError(errorMessage(err)); }
   };
 
-  const statusOf = (v) => (v.approval_date ? 'approved' : 'draft');
+  const close = async (v) => {
+    if (!window.confirm(`Close "${v.name}"? No further templates or updates will be allowed under it, and it will no longer be offered when creating templates.`)) return;
+    try { await templateService.closeVersion(v.id); success('Report version closed'); reload(); }
+    catch (err) { notifyError(errorMessage(err)); }
+  };
+
+  const isAdmin = user.role === ROLES.ADMIN;
+  const statusOf = (v) => (v.closed_at ? 'closed' : v.approval_date ? 'approved' : 'draft');
+  const toneOf = { closed: 'red', approved: 'green', draft: 'gray' };
 
   const columns = [
     { key: 'name', header: 'Report Version' },
-    { key: 'year', header: 'Year' },
-    { key: 'status', header: 'Status', render: (v) => <Badge tone={statusOf(v) === 'approved' ? 'green' : 'gray'}>{statusOf(v)}</Badge> },
+    { key: 'year', header: 'Year (EC)' },
+    { key: 'status', header: 'Status', render: (v) => <Badge tone={toneOf[statusOf(v)]}>{statusOf(v)}</Badge> },
     { key: 'created_at', header: 'Created', render: (v) => formatDate(v.created_at) },
     ...(canManage ? [{
       key: 'actions', header: '', render: (v) => (
-        statusOf(v) === 'draft'
-          ? <Button onClick={() => approve(v)}>Approve</Button>
-          : <span className="text-xs text-slate-400 dark:text-slate-500">Approved {formatDate(v.approval_date)}</span>
+        <div className="flex items-center gap-2">
+          {statusOf(v) === 'draft' && <Button onClick={() => approve(v)}>Approve</Button>}
+          {statusOf(v) === 'approved' && <span className="text-xs text-slate-400 dark:text-slate-500">Approved {formatDate(v.approval_date)}</span>}
+          {statusOf(v) === 'closed' && <span className="text-xs text-slate-400 dark:text-slate-500">Closed {formatDate(v.closed_at)}</span>}
+          {isAdmin && statusOf(v) !== 'closed' && <Button variant="danger" onClick={() => close(v)}>Close version</Button>}
+        </div>
       ),
     }] : []),
   ];
@@ -69,16 +85,16 @@ export default function ReportVersionsPage() {
 
   return (
     <>
-      <Header title="Report Versions" subtitle="The annual reporting cycles that report templates, plans and reports are organized under." />
+      <Header title="Report Versions" subtitle="The annual reporting cycles (Ethiopian fiscal year, Hamle–Sene) that report templates, plans and reports are organized under. Only the System Admin closes a version, at the end of the year." />
       {canManage && (
         <Card title="New report version" className="mb-6">
           <form onSubmit={createVersion} className="grid gap-3 md:grid-cols-4">
             <div className="md:col-span-2">
-              <label className="label">Title / description</label>
-              <input required className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              <label className="label">Title / description <span className="font-normal text-slate-400 dark:text-slate-500">(optional)</span></label>
+              <input className="input" placeholder="Optional — e.g. Annual health plan" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
             </div>
             <div>
-              <label className="label">Year</label>
+              <label className="label">Year (EC)</label>
               <input required type="number" className="input" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} />
             </div>
             <div>

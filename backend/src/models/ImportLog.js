@@ -11,10 +11,13 @@ const ImportLog = {
     const { rows } = await query('UPDATE import_logs SET status=$1, remarks=$2 WHERE id=$3 RETURNING *', [status, remarks ?? null, id]);
     return rows[0];
   },
-  async list({ woreda_id, limit = 50, offset = 0 } = {}) {
+  /** `zone_id` limits the log to one zone's woredas (always set for non-admins). */
+  async list({ woreda_id, zone_id, limit = 50, offset = 0 } = {}) {
     const { rows } = await query(
-      `SELECT * FROM import_logs WHERE ($1::varchar IS NULL OR woreda_id=$1) ORDER BY imported_at DESC LIMIT $2 OFFSET $3`,
-      [woreda_id ?? null, limit, offset]);
+      `SELECT il.* FROM import_logs il JOIN woredas w ON w.woreda_id = il.woreda_id
+       WHERE ($1::varchar IS NULL OR il.woreda_id = $1) AND ($2::varchar IS NULL OR w.zone_id = $2)
+       ORDER BY il.imported_at DESC LIMIT $3 OFFSET $4`,
+      [woreda_id ?? null, zone_id ?? null, limit, offset]);
     return rows;
   },
 };

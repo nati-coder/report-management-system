@@ -220,7 +220,9 @@ export const schemas = {
     rejection_reason: z.string().max(2000).optional(),
   }),
   reportVersion: z.object({
-    name: z.string().min(2),
+    // Optional: a version with no title is named after its year ("Report version 2018"). Title and description are
+    // one field (the version's name), and the department + year + name must be unique.
+    name: z.string().trim().max(200).optional(),
     year: z.number().int(),
     dep_id: id,
     max_nesting_level: z.number().int().min(1).max(10).optional(),

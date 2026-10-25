@@ -5,12 +5,13 @@ import Zone from '../models/Zone.js';
 import User from '../models/User.js';
 import { buildTableXlsx } from '../services/tableExportService.js';
 import catchAsync from '../utils/catchAsync.js';
+import { withAdvisoryLock } from '../../config/db.js';
 import { success, ApiError } from '../utils/apiResponse.js';
 import { ROLES, WOREDA_ROLES, ZONAL_ROLES } from '../constants/roles.js';
 import { notifyMany } from '../services/notificationService.js';
 import { templateScope, woredaPlanScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
 import { indicatorsOf } from '../utils/formatTree.js';
-import { hierarchyOf, hierarchyErrors, zoneTotalErrors, monthlyTotalErrors } from '../utils/planChecks.js';
+import { hierarchyOf, hierarchyErrors, applySubitemSums, zoneTotalErrors, monthlyTotalErrors } from '../utils/planChecks.js';
 import { buildOverview } from '../utils/planOverview.js';
 import { MONTH_NAMES, PLAN_MONTHS, currentFiscalYear } from '../utils/periods.js';
 
@@ -46,6 +47,8 @@ export const listPlans = catchAsync(async (req, res) => {
 });
 
 const CASCADED = ['submitted', 'approved'];
+/** One lock per format + zone + year: zone-total checks read what other woredas have and then write, so they take turns. */
+const totalsLock = (formatId, zoneId, year) => `plan-totals:${formatId}:${zoneId}:${year}`;
 const inconsistent = (problems) => ApiError.badRequest('The plan does not add up', problems);
 
 /** An approved format the caller is allowed to plan against. */
@@ -117,18 +120,22 @@ export const saveZonePlan = catchAsync(async (req, res) => {
 
   const indicatorList = indicatorsOf(format.schema_definition);
   const indicators = new Map(indicatorList.map((i) => [i.key, i]));
-  const data = cleanData(indicators, req.body.data, 'Zone plan');
+  const parents = hierarchyOf(format.schema_definition);
+  // items marked "sum of sub-items" are calculated here, whatever the client sent for them
+  const data = applySubitemSums(parents, cleanData(indicators, req.body.data, 'Zone plan'));
   if (!Object.keys(data).length) throw ApiError.badRequest('Enter at least one target');
 
-  const problems = hierarchyErrors(hierarchyOf(format.schema_definition), data);
+  const problems = hierarchyErrors(parents, data);
 
-  // …and stay consistent with the woredas already cascaded against it
-  const { woredas, cascaded } = await cascadedState(format, zoneId, year);
-  const complete = woredas.length > 0 && woredas.every((w) => cascaded.some((p) => p.woreda_id === w.woreda_id));
-  problems.push(...zoneTotalErrors({ indicators: indicatorList, zoneData: data, plans: cascaded, complete }));
-  if (problems.length) throw inconsistent(problems);
+  const row = await withAdvisoryLock(totalsLock(format.id, zoneId, year), async () => {
+    // …and stay consistent with the woredas already cascaded against it
+    const { woredas, cascaded } = await cascadedState(format, zoneId, year);
+    const complete = woredas.length > 0 && woredas.every((w) => cascaded.some((p) => p.woreda_id === w.woreda_id));
+    problems.push(...zoneTotalErrors({ indicators: indicatorList, zoneData: data, plans: cascaded, complete }));
+    if (problems.length) throw inconsistent(problems);
 
-  const row = await ZonePlan.upsert({ format_id: format.id, zone_id: zoneId, team_id: format.team_id, year, data }, req.user.id);
+    return ZonePlan.upsert({ format_id: format.id, zone_id: zoneId, team_id: format.team_id, year, data }, req.user.id);
+  });
   success(res, row, 'Zone plan saved');
 });
 
@@ -147,6 +154,7 @@ export const cascadePlans = catchAsync(async (req, res) => {
   const indicatorList = indicatorsOf(format.schema_definition);
   const indicators = new Map(indicatorList.map((i) => [i.key, i]));
 
+  const parents = hierarchyOf(format.schema_definition);
   const seen = new Set();
   const woredaOf = new Map();
   const items = [];
@@ -157,42 +165,45 @@ export const cascadePlans = catchAsync(async (req, res) => {
     if (!woreda) throw ApiError.badRequest(`Unknown woreda ${a.woreda_id}`);
     if (u.role !== ROLES.ADMIN && woreda.zone_id !== u.zone_id) throw ApiError.forbidden(`${woreda.name} is outside your zone`);
     woredaOf.set(a.woreda_id, woreda);
-    items.push({ woreda_id: a.woreda_id, data: cleanData(indicators, a.data, woreda.name) });
+    items.push({ woreda_id: a.woreda_id, data: applySubitemSums(parents, cleanData(indicators, a.data, woreda.name)) });
   }
   const zones = new Set([...woredaOf.values()].map((w) => w.zone_id));
   if (zones.size > 1) throw ApiError.badRequest('Plan one zone at a time');
   const zoneId = [...zones][0];
 
-  // Step 1 must come first, and woredas are planned only for what the zone plan covers.
-  const zonePlan = await ZonePlan.find({ format_id: format.id, zone_id: zoneId, year });
-  if (!zonePlan) throw ApiError.conflict('Enter and save the zone plan first, then plan the woredas against it');
-  for (const it of items) {
-    for (const key of Object.keys(it.data)) {
-      if (zonePlan.data[key] === undefined) {
-        throw ApiError.badRequest(`${woredaOf.get(it.woreda_id).name}: ${indicators.get(key).label} is not part of the zone plan`);
+  // Check and write under one lock, so two woredas cascaded at the same moment cannot together overshoot the zone plan.
+  const saved = await withAdvisoryLock(totalsLock(format.id, zoneId, year), async () => {
+    // Step 1 must come first, and woredas are planned only for what the zone plan covers.
+    const zonePlan = await ZonePlan.find({ format_id: format.id, zone_id: zoneId, year });
+    if (!zonePlan) throw ApiError.conflict('Enter and save the zone plan first, then plan the woredas against it');
+    for (const it of items) {
+      for (const key of Object.keys(it.data)) {
+        if (zonePlan.data[key] === undefined) {
+          throw ApiError.badRequest(`${woredaOf.get(it.woreda_id).name}: ${indicators.get(key).label} is not part of the zone plan`);
+        }
       }
     }
-  }
 
-  if (submit) {
-    const problems = [];
-    const parents = hierarchyOf(format.schema_definition);
-    for (const it of items) {
-      for (const e of hierarchyErrors(parents, it.data)) problems.push(`${woredaOf.get(it.woreda_id).name}: ${e}`);
+    if (submit) {
+      const problems = [];
+      for (const it of items) {
+        for (const e of hierarchyErrors(parents, it.data)) problems.push(`${woredaOf.get(it.woreda_id).name}: ${e}`);
+      }
+      const { woredas, cascaded } = await cascadedState(format, zoneId, year);
+      const inRequest = new Set(items.map((i) => i.woreda_id));
+      const others = cascaded.filter((p) => !inRequest.has(p.woreda_id));
+      const complete = woredas.length > 0 && woredas.every((w) => inRequest.has(w.woreda_id) || others.some((p) => p.woreda_id === w.woreda_id));
+      problems.push(...zoneTotalErrors({
+        indicators: indicatorList, zoneData: zonePlan.data, plans: [...others, ...items], complete,
+      }));
+      if (problems.length) throw inconsistent(problems);
     }
-    const { woredas, cascaded } = await cascadedState(format, zoneId, year);
-    const inRequest = new Set(items.map((i) => i.woreda_id));
-    const others = cascaded.filter((p) => !inRequest.has(p.woreda_id));
-    const complete = woredas.length > 0 && woredas.every((w) => inRequest.has(w.woreda_id) || others.some((p) => p.woreda_id === w.woreda_id));
-    problems.push(...zoneTotalErrors({
-      indicators: indicatorList, zoneData: zonePlan.data, plans: [...others, ...items], complete,
-    }));
-    if (problems.length) throw inconsistent(problems);
-  }
 
-  const saved = await Plan.cascadeMany({
-    format_id: format.id, team_id: format.team_id, year, items, status: submit ? 'submitted' : 'draft',
-  }, u.id);
+
+    return Plan.cascadeMany({
+      format_id: format.id, team_id: format.team_id, year, items, status: submit ? 'submitted' : 'draft',
+    }, u.id);
+  });
 
   if (submit) {
     for (const it of items) {
@@ -260,12 +271,13 @@ export const saveMonthlyPlan = catchAsync(async (req, res) => {
 
   const indicatorList = indicatorsOf(format.schema_definition);
   const indicators = new Map(indicatorList.map((i) => [i.key, i]));
+  const parents = hierarchyOf(format.schema_definition);
   const seen = new Set();
   const byMonth = new Map();
   for (const m of req.body.months) {
     if (seen.has(m.month)) throw ApiError.badRequest(`${MONTH_NAMES[m.month]} appears more than once`);
     seen.add(m.month);
-    const data = cleanData(indicators, m.data, MONTH_NAMES[m.month]);
+    const data = applySubitemSums(parents, cleanData(indicators, m.data, MONTH_NAMES[m.month]));
     for (const key of Object.keys(data)) {
       if (annual.data[key] === undefined) throw ApiError.badRequest(`${MONTH_NAMES[m.month]}: ${indicators.get(key).label} is not part of the annual plan`);
     }
@@ -275,7 +287,6 @@ export const saveMonthlyPlan = catchAsync(async (req, res) => {
 
   if (submit) {
     const problems = [];
-    const parents = hierarchyOf(format.schema_definition);
     for (const m of months) for (const e of hierarchyErrors(parents, m.data)) problems.push(`${MONTH_NAMES[m.month]}: ${e}`);
     problems.push(...monthlyTotalErrors({ indicators: indicatorList, annualData: annual.data, months, complete: true }));
     if (problems.length) throw ApiError.badRequest('The monthly plan does not add up', problems);

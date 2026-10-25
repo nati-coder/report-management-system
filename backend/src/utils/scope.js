@@ -50,3 +50,9 @@ export function woredaPlanScope(user) {
     ...(WOREDA_TEAM_SCOPED_ROLES.includes(user.role) && user.team_id ? { team_id: user.team_id } : {}),
   };
 }
+
+/** Who may change a woreda report beyond reading it: its author, the woreda's dept head / team leader, or the admin. */
+export const canManageReport = (user, report) =>
+  user.role === ROLES.ADMIN
+  || report.created_by === user.id
+  || [ROLES.WOREDA_DEPT_HEAD, ROLES.WOREDA_TEAM_LEADER].includes(user.role);

@@ -8,7 +8,7 @@ import { success, created, ApiError } from '../utils/apiResponse.js';
 import { ROLES, WOREDA_ROLES, ZONAL_ROLES } from '../constants/roles.js';
 import { notifyMany } from '../services/notificationService.js';
 import { templateScope, woredaPlanScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
-import { MONTH_NAMES, when } from '../utils/periods.js';
+import { MONTH_NAMES, when, filedMonthly } from '../utils/periods.js';
 import { periodProgress, windowsOfPeriod } from '../services/woredaSubmissionService.js';
 
 const num = (v) => (v ? Number(v) : undefined);
@@ -93,17 +93,17 @@ export const createWindow = catchAsync(async (req, res) => {
     if (!format) throw ApiError.badRequest('Report format not found');
     if (format.status !== 'approved') throw ApiError.badRequest('A reporting period can only be opened for an approved report format');
     if (!format.template_active) throw ApiError.badRequest('The report template behind this format is inactive');
-    if (format.template_type !== 'annual') throw ApiError.badRequest('A reporting period is opened from an annual report format; the woredas then report that month against their monthly plan');
+    if (!filedMonthly(format.template_type)) throw ApiError.badRequest('A reporting period can only be opened for a monthly report format (a quarterly format is reported per quarter); the woredas then report that month against their monthly plan');
     if (!inScope(scope, format)) throw ApiError.forbidden(OUT_OF_SCOPE);
     formats = [format];
   } else {
-    const latest = new Map(); // the latest approved revision of each active annual template, of every team in the department
+    const latest = new Map(); // the latest approved revision of each active monthly-reported template, of every team in the department
     for (const f of await ReportFormat.list({ status: 'approved', department_id: scope.department_id, team_id: scope.team_id })) {
-      if (f.template_type !== 'annual' || !f.template_active) continue;
+      if (!filedMonthly(f.template_type) || !f.template_active) continue;
       if (!latest.has(f.template_id) || f.version > latest.get(f.template_id).version) latest.set(f.template_id, f);
     }
     formats = [...latest.values()];
-    if (!formats.length) throw ApiError.badRequest('There is no approved annual report format in your department to open');
+    if (!formats.length) throw ApiError.badRequest('There is no approved monthly report format in your department to open');
   }
 
   const zone_id = u.role === ROLES.ADMIN ? req.body.zone_id : u.zone_id;

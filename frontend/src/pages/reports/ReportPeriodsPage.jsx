@@ -15,7 +15,8 @@ import * as referenceService from '../../services/referenceService.js';
 import { errorMessage } from '../../services/api.js';
 import { useNotify } from '../../context/NotificationContext.jsx';
 import { ROLES } from '../../utils/roleHelpers.js';
-import { MONTH_OPTIONS, monthName, fmtDateTime, toLocalInput, fromLocalInput, timeLeft } from '../../utils/periods.js';
+import { MONTH_OPTIONS, monthName, fmtDateTime, toLocalInput, fromLocalInput, timeLeft, currentFiscalYear, filedMonthly } from '../../utils/periods.js';
+import EcDateTimeInput from '../../components/common/EcDateTimeInput.jsx';
 
 const STATE_TONE = { upcoming: 'gray', open: 'green', closed: 'red' };
 const WOREDA_STATE = { submitted: ['green', 'submitted'], in_progress: ['amber', 'in progress'], not_started: ['gray', 'not started'], no_plan: ['gray', 'no accepted plan'] };
@@ -36,10 +37,10 @@ export default function ReportPeriodsPage() {
   const { data: ref } = useFetch(() => referenceService.all(), []);
   const { data: formats } = useFetch(() => reportFormatService.list({ status: 'approved' }), []);
   const { data: periods, loading, reload } = useFetch(() => reportWindowService.periods(isAdmin && zoneId ? { zone_id: zoneId } : {}), [zoneId]);
-  const annual = (formats || []).filter((f) => f.template_type === 'annual');
+  const annual = (formats || []).filter((f) => filedMonthly(f.template_type)); // monthly and annual templates are both reported month by month
 
   const now = new Date();
-  const [form, setForm] = useState({ format_id: '', year: String(now.getFullYear()), month: '', opens_at: toLocalInput(now), closes_at: toLocalInput(new Date(now.getTime() + 7 * 86400000)), zone_id: '' });
+  const [form, setForm] = useState({ format_id: '', year: String(currentFiscalYear()), month: '', opens_at: toLocalInput(now), closes_at: toLocalInput(new Date(now.getTime() + 7 * 86400000)), zone_id: '' });
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(null);       // key of the period whose woredas are shown
   const [detail, setDetail] = useState(null);
@@ -85,14 +86,14 @@ export default function ReportPeriodsPage() {
       {canOpen && (
         <Card title="Open a reporting period" className="mb-6">
           {!annual.length ? (
-            <p className="text-sm text-slate-500 dark:text-slate-400">There is no approved <em>annual</em> report format yet. Quarterly, half-year and annual reports are summed up from the monthly ones, so create a monthly format first.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">There is no approved <em>monthly</em> report format yet. Quarterly, half-year and annual reports are summed up from the monthly ones, so a monthly format has to be approved first.</p>
           ) : (
             <form onSubmit={openPeriod} className="space-y-3">
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="md:col-span-2">
                   <label className="label" htmlFor="rp-format">Report format</label>
                   <select id="rp-format" className="input" value={form.format_id} onChange={(e) => chooseFormat(e.target.value)}>
-                    <option value="">All teams' annual formats</option>
+                    <option value="">All teams' monthly formats</option>
                     {annual.map((f) => <option key={f.id} value={f.id}>{f.template_title} — {f.version_name} · {f.team_name} (v{f.version})</option>)}
                   </select>
                 </div>
@@ -109,11 +110,11 @@ export default function ReportPeriodsPage() {
                 </div>
                 <div>
                   <label className="label" htmlFor="rp-opens">Opens</label>
-                  <input id="rp-opens" type="datetime-local" required className="input" value={form.opens_at} onChange={(e) => setForm({ ...form, opens_at: e.target.value })} />
+                  <EcDateTimeInput id="rp-opens" required value={form.opens_at} onChange={(v) => setForm({ ...form, opens_at: v })} />
                 </div>
                 <div>
                   <label className="label" htmlFor="rp-closes">Deadline</label>
-                  <input id="rp-closes" type="datetime-local" required className="input" value={form.closes_at} onChange={(e) => setForm({ ...form, closes_at: e.target.value })} />
+                  <EcDateTimeInput id="rp-closes" required value={form.closes_at} onChange={(v) => setForm({ ...form, closes_at: v })} />
                 </div>
                 {isAdmin && (
                   <div>
@@ -186,8 +187,8 @@ export default function ReportPeriodsPage() {
 
                 {editing && (
                   <div className="mt-3 flex flex-wrap items-end gap-3 rounded-lg bg-slate-50 p-3 dark:bg-slate-900/40">
-                    <div><label className="label">Opens</label><input type="datetime-local" className="input" value={edit.opens_at} onChange={(e) => setEdit({ ...edit, opens_at: e.target.value })} /></div>
-                    <div><label className="label">Deadline</label><input type="datetime-local" className="input" value={edit.closes_at} onChange={(e) => setEdit({ ...edit, closes_at: e.target.value })} /></div>
+                    <div><label className="label">Opens</label><EcDateTimeInput value={edit.opens_at} onChange={(v) => setEdit({ ...edit, opens_at: v })} /></div>
+                    <div><label className="label">Deadline</label><EcDateTimeInput value={edit.closes_at} onChange={(v) => setEdit({ ...edit, closes_at: v })} /></div>
                     <Button onClick={() => saveDates(p)}>Save</Button>
                     <Button variant="secondary" onClick={() => setEdit(null)}>Cancel</Button>
                     <span className="text-xs text-slate-500 dark:text-slate-400">Applies to every team's report of this month.</span>

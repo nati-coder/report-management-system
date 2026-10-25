@@ -4,21 +4,8 @@ import Zone from '../models/Zone.js';
 import Department from '../models/Department.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success, created, ApiError } from '../utils/apiResponse.js';
-import { ROLES, WOREDA_ROLES, ZONAL_ROLES } from '../constants/roles.js';
-
-/** Roles that belong to a team: a team is mandatory. */
-const TEAM_REQUIRED_ROLES = [ROLES.ZONAL_EXPERT, ROLES.ZONAL_TEAM_LEADER, ROLES.WOREDA_EXPERT, ROLES.WOREDA_TEAM_LEADER];
-
-/**
- * Business rules: woreda roles need woreda_id; zonal roles need zone_id and never have a woreda;
- * zonal/woreda experts and team leaders must have a team (which must belong to their department).
- */
-function checkPlacement(u) {
-  if (WOREDA_ROLES.includes(u.role) && !u.woreda_id) throw ApiError.badRequest('woreda_id is required for woreda-level roles');
-  if (ZONAL_ROLES.includes(u.role) && !u.zone_id) throw ApiError.badRequest('zone_id is required for zonal-level roles');
-  if (ZONAL_ROLES.includes(u.role) && u.woreda_id) throw ApiError.badRequest('A zonal role cannot be assigned to a woreda');
-  if (TEAM_REQUIRED_ROLES.includes(u.role) && !u.team_id) throw ApiError.badRequest('A team is required for this role');
-}
+import { ROLES } from '../constants/roles.js';
+import { checkPlacement, withTeamRule } from '../utils/userRules.js';
 
 /** The team must exist and sit in the user's department (when one is given). */
 async function checkTeam(u) {
@@ -29,9 +16,10 @@ async function checkTeam(u) {
 }
 
 export const createUser = catchAsync(async (req, res) => {
+  req.body = withTeamRule(req.body); // department heads and plan experts have no team, whatever the client sent
   checkPlacement(req.body);
   await checkTeam(req.body);
-  if (req.body.woreda_id && !req.body.zone_id) {
+  if (req.body.woreda_id) { // a woreda user's zone is always the woreda's zone, whatever the client sent
     const w = await Zone.findWoreda(req.body.woreda_id);
     if (!w) throw ApiError.badRequest('Unknown woreda_id');
     req.body.zone_id = w.zone_id;
@@ -52,7 +40,8 @@ export const listUsers = catchAsync(async (req, res) => {
 
 export const getUser = catchAsync(async (req, res) => {
   const user = await User.findById(req.params.id);
-  if (!user) throw ApiError.notFound('User not found');
+  // a zonal head may only see their own zone's people (404, not 403, so ids of other zones are not confirmed)
+  if (!user || (req.user.role !== ROLES.ADMIN && user.zone_id !== req.user.zone_id)) throw ApiError.notFound('User not found');
   success(res, user);
 });
 
@@ -61,9 +50,15 @@ export const updateUser = catchAsync(async (req, res) => {
   if (['role', 'woreda_id', 'team_id', 'department_id'].some((k) => k in req.body)) {
     const current = await User.findById(req.params.id);
     if (!current) throw ApiError.notFound('User not found');
-    const merged = { ...current, ...req.body };
+    const merged = withTeamRule({ ...current, ...req.body });
     checkPlacement(merged);
     await checkTeam(merged);
+    if (merged.team_id === null && (current.team_id !== null || req.body.team_id)) req.body.team_id = null; // team-less role: never keep or set a team
+  }
+  if (req.body.woreda_id) { // moving a user to another woreda moves their zone with it
+    const w = await Zone.findWoreda(req.body.woreda_id);
+    if (!w) throw ApiError.badRequest('Unknown woreda_id');
+    req.body.zone_id = w.zone_id;
   }
   const user = await User.update(req.params.id, req.body);
   if (!user) throw ApiError.notFound('User not found');

@@ -12,7 +12,10 @@ export default function Navbar() {
   const toggleLang = () => { const n = lang === 'en' ? 'am' : 'en'; setLang(n); setL(n); window.location.reload(); };
   return (
     <header className="print:hidden z-30 flex h-14 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-6 dark:border-slate-700 dark:bg-slate-800">
-      <span className="font-semibold text-brand-700 dark:text-brand-400">Woreda-Zonal RMS</span>
+      <span className="flex items-center gap-2 font-semibold text-brand-700 dark:text-brand-400">
+        <img src="/logo.png" alt="" width="32" height="32" className="h-8 w-8" />
+        Woreda-Zonal RMS
+      </span>
       <div className="flex items-center gap-4 text-sm">
         <button onClick={toggleTheme} aria-label="Toggle dark mode"
           className="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700">

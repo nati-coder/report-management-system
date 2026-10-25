@@ -12,13 +12,14 @@ import { errorMessage } from '../../services/api.js';
 import { useNotify } from '../../context/NotificationContext.jsx';
 import { isZonalUser, ROLES } from '../../utils/roleHelpers.js';
 import { formatNumber } from '../../utils/formatters.js';
+import { currentFiscalYear, MONTH_OPTIONS } from '../../utils/periods.js';
 
 export default function TeamRankingsPage() {
   const { user } = useAuth();
   const { success, error } = useNotify();
   const { data: ref } = useFetch(() => referenceService.all(), []);
   const woredas = (ref?.woredas || []).filter((w) => !user.zone_id || w.zone_id === user.zone_id);
-  const [f, setF] = useState({ woreda_id: user.woreda_id || '', period_type: 'monthly', year: new Date().getFullYear(), month: 1, quarter: 1 });
+  const [f, setF] = useState({ woreda_id: user.woreda_id || '', period_type: 'monthly', year: currentFiscalYear(), month: 7, quarter: 1 });
   const params = { woreda_id: f.woreda_id, period_type: f.period_type, year: f.year, ...(f.period_type === 'monthly' ? { month: f.month } : {}), ...(f.period_type === 'quarterly' ? { quarter: f.quarter } : {}) };
   const { data, loading, reload } = useTeamRankings(f.woreda_id ? params : { woreda_id: '', period_type: 'monthly', year: f.year });
   const teamName = (id) => ref?.teams.find((t) => t.id === id)?.name;

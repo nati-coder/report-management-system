@@ -1,15 +1,14 @@
 /**
  * Annual-plan consistency helpers — client side. Mirrors backend/src/utils/planChecks.js:
- *  - HIERARCHY: a measured item that has measured sub-items equals their sum (same measurement, never for %).
+ *  - HIERARCHY: an item marked "Is sum of sub-items? Yes" equals the sum of its sub-items (same measurement, never for %).
  *  - ZONE TOTALS: woreda targets add up to the zone plan (never above it; exactly, once every woreda is planned).
  * The server enforces both; these helpers show the same checks live while the expert types.
  */
-import { isPercent } from './formatTree.js';
+import { summableSubitems } from './formatTree.js';
 
 export const EPS = 0.005;
 export const round = (n) => Math.round(n * 100) / 100;
 export const fmt = (n) => (Number.isFinite(n) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(round(n)) : '—');
-const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 const depthOf = (key) => key.split('.').length;
 
 /** { key: '12' } typed strings -> { key: 12 } numbers (blank / non-numeric values dropped). */
@@ -23,7 +22,11 @@ export function toNumbers(values) {
   return out;
 }
 
-/** Summable parents: [{ key, label, children: [{ key, label }] }] — nearest measured sub-items, looking through headings. */
+/**
+ * Items that are a sum of their sub-items: [{ key, label, children: [{ key, label }] }] — nearest measured sub-items, looking
+ * through headings. The format's "Is sum of sub-items?" decides (Yes = sum, No = typed by hand); a format saved before
+ * it existed has no value and keeps the old rule. Same result as the server's hierarchyOf (a test keeps them in step).
+ */
 export function hierarchyOf(schema) {
   const parents = [];
   if (!Array.isArray(schema?.nodes)) return parents;
@@ -31,17 +34,10 @@ export function hierarchyOf(schema) {
   while (stack.length) {
     const n = stack.pop();
     for (const c of n.children || []) stack.push(c);
-    if (!n.measurement || isPercent(n.measurement)) continue;
-    const found = [];
-    const inner = [...(n.children || [])].reverse();
-    while (inner.length) {
-      const c = inner.pop();
-      if (c.measurement) found.push(c);
-      else for (let i = (c.children || []).length - 1; i >= 0; i -= 1) inner.push(c.children[i]);
-    }
-    if (found.length && found.every((c) => same(c.measurement, n.measurement))) {
-      parents.push({ key: n.code, label: `${n.code}. ${n.title}`, children: found.map((c) => ({ key: c.code, label: `${c.code}. ${c.title}` })) });
-    }
+    if (n.sum_of_subitems === false) continue;
+    const found = summableSubitems(n);
+    if (!found) continue;
+    parents.push({ key: n.code, label: `${n.code}. ${n.title}`, children: found.map((c) => ({ key: c.code, label: `${c.code}. ${c.title}` })) });
   }
   return parents;
 }

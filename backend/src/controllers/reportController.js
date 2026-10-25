@@ -7,12 +7,14 @@ import User from '../models/User.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success, created, ApiError } from '../utils/apiResponse.js';
 import { ROLES, WOREDA_ROLES, ZONAL_ROLES, REVIEWER_ROLES } from '../constants/roles.js';
-import { STATUS, TRANSITIONS, WOREDA_ONLY } from '../constants/status.js';
-import { forwardIfComplete } from '../services/woredaSubmissionService.js';
+import { STATUS, TRANSITIONS } from '../constants/status.js';
+import { forwardIfComplete, withPeriodLock } from '../services/woredaSubmissionService.js';
 import { canAccessWoreda } from '../middlewares/rbacMiddleware.js';
 import { notify } from '../services/notificationService.js';
 import { woredaPlanScope, templateScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
+import { assertReportAccess, canManageReport } from '../utils/reportAccess.js';
 import { indicatorsOf } from '../utils/formatTree.js';
+import { hierarchyOf, applySubitemSums } from '../utils/planChecks.js';
 import { MONTH_NAMES, RANGES, COUNTED, summarise, when, filedMonthly } from '../utils/periods.js';
 
 /** The annual plan a woreda has accepted for a format + year — what its reports are filed against. */
@@ -40,6 +42,7 @@ async function planFor(woreda_id, format_id, year, month) {
 /**
  * Report entries follow the plan: only items the woreda's accepted plan has a target for can be reported,
  * and each value must be a number (never negative; a percentage 0–100). Blank = not reported yet.
+ * A sum-of-sub-items item is worked out from its sub-items.
  * Formats saved in the older section/KPI layout keep their entries as they are.
  */
 function cleanEntries(format, plan, raw) {
@@ -57,6 +60,9 @@ function cleanEntries(format, plan, raw) {
     if (item.max != null && value > item.max) throw ApiError.badRequest(`${item.label} cannot exceed ${item.max}`);
     data[key] = value;
   }
+  // Items the format marks "sum of sub-items" are calculated here, whatever was sent for them (only those the plan covers).
+  const summed = applySubitemSums(hierarchyOf(schema), data);
+  for (const [key, value] of Object.entries(summed)) if (plan.data?.[key] !== undefined) data[key] = value;
   return data;
 }
 
@@ -77,11 +83,15 @@ async function assertWindowOpen(user, { format_id, zone_id, year, month }) {
 async function loadAccessible(req) {
   const report = await Report.findById(req.params.id);
   if (!report) throw ApiError.notFound('Report not found');
-  if (!(await canAccessWoreda(req.user, report.woreda_id))) throw ApiError.forbidden('Outside your administrative scope');
-  // what is still inside the woreda (draft, waiting for / approved by the woreda plan expert) is not the zone's to see
-  if (ZONAL_ROLES.includes(req.user.role) && WOREDA_ONLY.includes(report.status)) throw ApiError.notFound('Report not found');
+  // woreda, zone-hiding of woreda-only statuses, and department / team scope (utils/reportAccess.js)
+  await assertReportAccess(req.user, report);
   return report;
 }
+
+/** Only the author, the woreda dept head / team leader (or the admin) may submit, edit or delete a woreda report. */
+const assertCanManage = (user, report) => {
+  if (!canManageReport(user, report)) throw ApiError.forbidden('Only the author, the team leader or the department head can do this');
+};
 
 const assertTransition = (from, to) => {
   if (!TRANSITIONS[from]?.includes(to)) throw ApiError.badRequest(`Cannot move report from "${from}" to "${to}"`);
@@ -92,12 +102,19 @@ export const listReports = catchAsync(async (req, res) => {
   const f = { status, type, year: year && Number(year), team_id: team_id && Number(team_id), limit: Number(limit) || 50, offset: Number(offset) || 0 };
   const u = req.user;
   if (WOREDA_ROLES.includes(u.role)) {
+    const scope = woredaPlanScope(u); // same rule as for plans: your department (and team, for experts / team leaders)
+    if (!u.woreda_id || !scope) return success(res, []);
     f.woredaIds = [u.woreda_id];
+    f.scope_department_id = scope.department_id;
+    if (scope.team_id) f.scope_team_id = scope.team_id;
     if (u.role === ROLES.WOREDA_TEAM_LEADER && u.team_id) f.team_id = u.team_id;
     if (u.role === ROLES.WOREDA_EXPERT) f.created_by = u.id;
   } else if (ZONAL_ROLES.includes(u.role)) {
-    if (!u.zone_id) return success(res, []);
+    const scope = templateScope(u); // …and the zone's reviewers only see their own department / team
+    if (!u.zone_id || !scope) return success(res, []);
     f.zone_id = u.zone_id;
+    f.scope_department_id = scope.department_id;
+    if (scope.team_id) f.scope_team_id = scope.team_id;
     f.excludeDraft = true; // zonal users only see what a woreda has actually submitted
     if (woreda_id) f.woredaIds = [woreda_id];
   } else if (woreda_id) {
@@ -131,7 +148,14 @@ export const createReport = catchAsync(async (req, res) => {
   }
   const plan = await planFor(woreda_id, format.id, req.body.year, monthly ? req.body.month : null);
   const data = cleanEntries(format, plan, req.body.data);
-  const report = await Report.create({ ...req.body, data, type: monthly ? 'monthly' : format.template_type, woreda_id, team_id: format.team_id }, u.id);
+  let report;
+  try {
+    report = await Report.create({ ...req.body, data, type: monthly ? 'monthly' : format.template_type, woreda_id, team_id: format.team_id }, u.id);
+  } catch (err) {
+    // the unique index (migration 0008) is the real guard; the check above only gives the friendlier message
+    if (err.code === '23505') throw ApiError.conflict('A report for this woreda, format and period already exists. Open it from the report list.');
+    throw err;
+  }
   res.locals.auditTargetId = report.id;
   created(res, report, 'Draft created');
 });
@@ -139,9 +163,7 @@ export const createReport = catchAsync(async (req, res) => {
 export const updateReport = catchAsync(async (req, res) => {
   const report = await loadAccessible(req);
   if (![STATUS.DRAFT, STATUS.REJECTED].includes(report.status)) throw ApiError.badRequest('Only draft or rejected reports can be edited');
-  if (report.created_by !== req.user.id && req.user.role !== ROLES.ADMIN && req.user.role !== ROLES.WOREDA_DEPT_HEAD) {
-    throw ApiError.forbidden('Only the author can edit this report');
-  }
+  assertCanManage(req.user, report);
   if (report.type === 'monthly' && report.format_id && report.month) await assertWindowOpen(req.user, report);
   let data = req.body.data;
   if (report.format_id) { // reports filed against a format follow its accepted plan
@@ -162,25 +184,27 @@ export const updateReport = catchAsync(async (req, res) => {
  */
 export const submitReport = catchAsync(async (req, res) => {
   const report = await loadAccessible(req);
+  assertCanManage(req.user, report);
   const format = report.format_id ? await ReportFormat.findById(report.format_id) : null;
   assertTransition(report.status, format ? STATUS.PENDING_WOREDA : STATUS.SUBMITTED);
   if (report.type === 'monthly' && report.format_id && report.month) await assertWindowOpen(req.user, report);
 
   if (!format) { // legacy: straight to the zone
     const updated = await Report.setStatus(report.id, STATUS.SUBMITTED);
-    const reviewers = await User.list({ zone_id: report.zone_id, limit: 200 });
-    await Promise.all(reviewers.filter((r) => REVIEWER_ROLES.includes(r.role)).map((r) =>
-      notify(r.id, `New report submitted: ${report.title}`, { report_id: report.id })));
+    const reviewers = await User.list({ zone_id: report.zone_id, roles: REVIEWER_ROLES, activeOnly: true, limit: 1000 });
+    await Promise.all(reviewers.map((r) => notify(r.id, `New report submitted: ${report.title}`, { report_id: report.id })));
     return success(res, updated, 'Report submitted');
   }
 
-  const staff = await User.list({ woreda_id: report.woreda_id, department_id: format.department_id, limit: 200 });
-  const experts = staff.filter((x) => x.role === ROLES.WOREDA_PLAN_EXPERT && x.is_active !== false);
+  const experts = await User.list({ role: ROLES.WOREDA_PLAN_EXPERT, woreda_id: report.woreda_id, department_id: format.department_id, activeOnly: true, limit: 100 });
   const selfApproves = !experts.length || req.user.role === ROLES.WOREDA_PLAN_EXPERT;
   if (selfApproves) {
-    await Report.setStatus(report.id, STATUS.PENDING_WOREDA);
-    const updated = await Report.setWoredaStatus(report.id, STATUS.WOREDA_APPROVED, { userId: req.user.role === ROLES.WOREDA_PLAN_EXPERT ? req.user.id : null });
-    const outcome = await forwardIfComplete(updated, format);
+    // approve + "is the woreda complete?" must not interleave with another team's approval for the same period
+    const { updated, outcome } = await withPeriodLock(report, async () => {
+      await Report.setStatus(report.id, STATUS.PENDING_WOREDA);
+      const row = await Report.setWoredaStatus(report.id, STATUS.WOREDA_APPROVED, { userId: req.user.role === ROLES.WOREDA_PLAN_EXPERT ? req.user.id : null });
+      return { updated: row, outcome: await forwardIfComplete(row, format) };
+    });
     return success(res, { report: updated, ...outcome }, outcome.forwarded ? 'Report submitted — the woreda has now submitted to the zone' : 'Report submitted');
   }
   const updated = await Report.setStatus(report.id, STATUS.PENDING_WOREDA);
@@ -201,8 +225,10 @@ export const woredaReview = catchAsync(async (req, res) => {
 
   if (action === 'approve') {
     if (report.status !== STATUS.PENDING_WOREDA) throw ApiError.conflict('Only a report waiting for the woreda plan expert can be approved');
-    const updated = await Report.setWoredaStatus(report.id, STATUS.WOREDA_APPROVED, { userId: req.user.id });
-    const outcome = await forwardIfComplete(updated, format);
+    const { updated, outcome } = await withPeriodLock(report, async () => {
+      const row = await Report.setWoredaStatus(report.id, STATUS.WOREDA_APPROVED, { userId: req.user.id });
+      return { updated: row, outcome: await forwardIfComplete(row, format) };
+    });
     await notify(report.created_by, outcome.forwarded
       ? `Your report "${report.title}" was approved — all team reports are in, so the woreda has submitted to the zone`
       : `Your report "${report.title}" was approved by the woreda plan expert`, { report_id: report.id });
@@ -230,6 +256,7 @@ export const reviewReport = catchAsync(async (req, res) => {
 
 export const deleteReport = catchAsync(async (req, res) => {
   const report = await loadAccessible(req);
+  assertCanManage(req.user, report);
   if (report.status !== STATUS.DRAFT) throw ApiError.badRequest('Only drafts can be deleted');
   await Report.remove(report.id);
   success(res, null, 'Report deleted');

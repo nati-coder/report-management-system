@@ -3,6 +3,8 @@ import Template from '../models/Template.js';
 import Report from '../models/Report.js';
 import ImportLog from '../models/ImportLog.js';
 import Zone from '../models/Zone.js';
+import Department from '../models/Department.js';
+import { ROLES } from '../constants/roles.js';
 import { withTransaction } from '../../config/db.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success, ApiError } from '../utils/apiResponse.js';
@@ -19,6 +21,24 @@ export const importExcel = catchAsync(async (req, res) => {
   if (!woreda_id || !team_id || !report_version_id) { await cleanup(); throw ApiError.badRequest('woreda_id, team_id and report_version_id are required'); }
   if (!(await Zone.findWoreda(woreda_id))) { await cleanup(); throw ApiError.badRequest('Unknown woreda_id'); }
   if (!(await canAccessWoreda(req.user, woreda_id))) { await cleanup(); throw ApiError.forbidden('Outside your administrative scope'); }
+
+  // The team must be one the importer works with: their department, and their own team if they are a zonal expert.
+  const team = await Department.findTeam(team_id);
+  if (!team) { await cleanup(); throw ApiError.badRequest('Unknown team_id'); }
+  if (req.user.role !== ROLES.ADMIN) {
+    const u = req.user;
+    if (!u.department_id || team.department_id !== u.department_id || (u.role === ROLES.ZONAL_EXPERT && u.team_id && u.team_id !== team.id)) {
+      await cleanup(); throw ApiError.forbidden('This team belongs to another department or team than the one on your account');
+    }
+  }
+
+  // The extension is only a hint: check the file really is a spreadsheet (xlsx = ZIP, xls = OLE2) before parsing it.
+  const head = Buffer.alloc(4);
+  const fh = await fs.open(req.file.path, 'r');
+  try { await fh.read(head, 0, 4, 0); } finally { await fh.close(); }
+  const isZip = head[0] === 0x50 && head[1] === 0x4b;
+  const isOle = head[0] === 0xd0 && head[1] === 0xcf && head[2] === 0x11 && head[3] === 0xe0;
+  if (!isZip && !isOle) { await cleanup(); throw ApiError.badRequest('The file is not a valid Excel workbook'); }
 
   const log = await ImportLog.create({ admin_id: req.user.id, woreda_id, file_name: req.file.originalname, file_path: req.file.path });
   try {
@@ -76,4 +96,7 @@ export const importExcel = catchAsync(async (req, res) => {
 });
 
 export const listImports = catchAsync(async (req, res) =>
-  success(res, await ImportLog.list({ woreda_id: req.query.woreda_id })));
+  success(res, await ImportLog.list({
+    woreda_id: req.query.woreda_id,
+    zone_id: req.user.role === ROLES.ADMIN ? undefined : (req.user.zone_id ?? '-'), // a non-admin never sees other zones' imports
+  })));

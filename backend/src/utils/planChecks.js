@@ -1,24 +1,28 @@
 /**
  * The two consistency rules for annual plans (zone plan and woreda plans alike):
  *
- *  1. HIERARCHY — a measured item that has measured sub-items must equal their sum.
- *     "Sub-items" are the nearest measured items below it (headings in between are looked through).
- *     Only checked when the item and its sub-items share the same measurement, and never for
- *     percentages (a rate is not a sum). It applies once at least one sub-item has a value.
+ *  1. HIERARCHY — an item the format marks "Is sum of sub-items? Yes" is calculated as the sum of its
+ *     sub-items (applySubitemSums) and must equal it (hierarchyErrors). "Sub-items" are the nearest
+ *     measured items below it (headings in between are looked through). An item marked No is entered
+ *     by hand and never checked. Formats saved before the flag existed have no value either way: for
+ *     those the old rule applies — every measured item whose sub-items share its measurement is a sum
+ *     (never for percentages, a rate is not a sum). It applies once at least one sub-item has a value.
  *  2. ZONE TOTALS — for every summable item, the woredas' targets added together must not exceed the
  *     zone plan and, once every woreda of the zone is planned, must equal it.
  *
  * (A frontend copy of the hierarchy helpers lives in frontend/src/utils/planChecks.js — keep them in step.)
  */
-import { isPercent } from './formatTree.js';
+import { summableSubitems } from './formatTree.js';
 
 export const EPS = 0.005; // tolerance for decimals typed by hand
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const round = (n) => Math.round(n * 100) / 100;
 const fmt = (n) => String(round(n));
-const same = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
 
-/** [{ key, label, measurement, children: [{ key, label }] }] for each summable parent (iterative, any depth). */
+/**
+ * [{ key, label, measurement, children: [{ key, label }] }] for each item that is a sum of its sub-items (iterative, any depth).
+ * An explicit flag wins (true = sum, false = manual); a format saved without the flag falls back to the old structural rule.
+ */
 export function hierarchyOf(schema) {
   const parents = [];
   if (!Array.isArray(schema?.nodes)) return parents; // older section/KPI formats have no hierarchy
@@ -26,23 +30,31 @@ export function hierarchyOf(schema) {
   while (stack.length) {
     const n = stack.pop();
     for (const c of n.children || []) stack.push(c);
-    if (!n.measurement || isPercent(n.measurement)) continue;
-
-    const found = [];
-    const inner = [...(n.children || [])].reverse();
-    while (inner.length) {
-      const c = inner.pop();
-      if (c.measurement) found.push(c);
-      else for (let i = (c.children || []).length - 1; i >= 0; i -= 1) inner.push(c.children[i]);
-    }
-    if (found.length && found.every((c) => same(c.measurement, n.measurement))) {
-      parents.push({
-        key: n.code, label: `${n.code}. ${n.title}`, measurement: n.measurement,
-        children: found.map((c) => ({ key: c.code, label: `${c.code}. ${c.title}` })),
-      });
-    }
+    if (n.sum_of_subitems === false) continue;
+    const found = summableSubitems(n); // null for headings, percentages, no sub-items or mixed measurements
+    if (!found) continue;
+    parents.push({
+      key: n.code, label: `${n.code}. ${n.title}`, measurement: n.measurement,
+      children: found.map((c) => ({ key: c.code, label: `${c.code}. ${c.title}` })),
+    });
   }
   return parents;
+}
+
+const depthOf = (key) => key.split('.').length;
+
+/**
+ * The server's own calculation of the sums: returns a copy of `data` where every sum item that has a value in at least one
+ * of its sub-items equals their total — whatever the client sent for it. Deepest items first, so a sum of sums works.
+ */
+export function applySubitemSums(parents, data) {
+  const out = { ...data };
+  for (const p of [...parents].sort((a, b) => depthOf(b.key) - depthOf(a.key))) {
+    const vals = p.children.map((c) => num(out[c.key]));
+    if (vals.every((v) => v === null)) continue;
+    out[p.key] = round(vals.reduce((s, v) => s + (v ?? 0), 0));
+  }
+  return out;
 }
 
 /** Messages for every parent whose value is not the sum of its sub-items (empty = consistent). */

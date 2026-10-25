@@ -7,6 +7,11 @@ const User = {
     const { rows } = await query(`SELECT ${PUBLIC} FROM users WHERE id = $1`, [id]);
     return rows[0] || null;
   },
+  /** What the JWT strategy needs: the public fields plus when the password last changed (never sent to clients). */
+  async findForAuth(id) {
+    const { rows } = await query(`SELECT ${PUBLIC}, password_changed_at FROM users WHERE id = $1`, [id]);
+    return rows[0] || null;
+  },
   async findByEmail(email) {
     const { rows } = await query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
     return rows[0] || null;
@@ -15,10 +20,13 @@ const User = {
     const { rows } = await query('SELECT * FROM users WHERE id = $1', [id]);
     return rows[0] || null;
   },
-  async list({ role, zone_id, woreda_id, department_id, team_id, limit = 50, offset = 0 } = {}) {
+  /** `roles` = any of several roles; `activeOnly` skips deactivated accounts (use both when picking who to notify). */
+  async list({ role, roles, zone_id, woreda_id, department_id, team_id, activeOnly, limit = 50, offset = 0 } = {}) {
     const cond = []; const p = [];
     const add = (sql, v) => { p.push(v); cond.push(sql.replace('?', `$${p.length}`)); };
     if (role) add('role = ?', role);
+    if (roles) add('role = ANY(?)', roles);
+    if (activeOnly) cond.push('is_active = TRUE');
     if (zone_id) add('zone_id = ?', zone_id);
     if (woreda_id) add('woreda_id = ?', woreda_id);
     if (department_id) add('department_id = ?', department_id);
@@ -47,7 +55,8 @@ const User = {
     return rows[0] || null;
   },
   async updatePassword(id, hash) {
-    await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, id]);
+    // password_changed_at invalidates every token issued before it (see config/passport.js)
+    await query('UPDATE users SET password_hash = $1, password_changed_at = now() WHERE id = $2', [hash, id]);
   },
 };
 export default User;

@@ -148,7 +148,13 @@ export const getVersion = catchAsync(async (req, res) => {
 
 export const createVersion = catchAsync(async (req, res) => {
   deptGuard(req.user, req.body.dep_id);
-  const v = await Template.createVersion(req.body, req.user.id);
+  // the title is optional: without one the version is named after its year
+  const name = req.body.name || `Report version ${req.body.year}`;
+  let v;
+  try { v = await Template.createVersion({ ...req.body, name }, req.user.id); } catch (e) {
+    if (e.code === '23505') throw ApiError.conflict(`A report version named "${name}" already exists for this department and year — give this one a different title or version number.`);
+    throw e;
+  }
   res.locals.auditTargetId = v.id;
   created(res, v, 'Report version created');
 });

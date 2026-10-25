@@ -8,6 +8,9 @@
  *
  * Each item has only a title and a measurement (the unit its value is reported in).
  * A blank measurement means the item is a heading with no value of its own.
+ * `sum_of_subitems` (true / false) says whether the item's value is calculated as the sum of its
+ * sub-items (true) or entered by hand (false). Formats saved before the flag existed have no such key:
+ * for those the old rule still applies (see summableSubitems and planChecks.hierarchyOf).
  * `code` is system-assigned from position; plan and report values are keyed by it.
  * A format is locked once approved, so its codes never shift under existing data.
  */
@@ -16,6 +19,35 @@ const MAX_TITLE = 500;
 const MAX_MEASUREMENT = 100;
 
 export const isPercent = (measurement) => /^\s*(%|percent|percentage)\s*$/i.test(measurement || '');
+const sameMeasurement = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+
+/** The nearest measured items below `node`, looking through headings (iterative, any depth), in document order. */
+export function measuredSubitems(node) {
+  const found = [];
+  const inner = [...(node.children || [])].reverse();
+  while (inner.length) {
+    const c = inner.pop();
+    if (c.measurement) found.push(c);
+    else for (let i = (c.children || []).length - 1; i >= 0; i -= 1) inner.push(c.children[i]);
+  }
+  return found;
+}
+
+/**
+ * Why `node` cannot be a sum of its sub-items, or null when it can. A sum needs a value of its own (a measurement),
+ * is never a percentage (a rate is not a sum), and needs at least one measured sub-item, all in the same measurement.
+ */
+export function sumBlocker(node) {
+  if (!node.measurement) return 'a heading has no value of its own, so it cannot be a sum';
+  if (isPercent(node.measurement)) return 'a percentage is a rate, not a sum';
+  const subs = measuredSubitems(node);
+  if (!subs.length) return 'it needs at least one sub-item with a measurement to sum';
+  if (!subs.every((c) => sameMeasurement(c.measurement, node.measurement))) return `its sub-items must all use the same measurement (${node.measurement}) to be summed`;
+  return null;
+}
+
+/** The sub-items the node is the sum of, or null when it is not summable by structure. */
+export const summableSubitems = (node) => (sumBlocker(node) ? null : measuredSubitems(node));
 
 /**
  * Validate + number a tree. Iterative (explicit stack), so depth never overflows the call stack.
@@ -46,10 +78,24 @@ export function normalizeNodes(rawNodes) {
 
       if (n.children != null && !Array.isArray(n.children)) return { error: `Item ${code}: children must be a list` };
 
-      const node = { code, title, measurement, children: [] };
+      if (n.sum_of_subitems != null && typeof n.sum_of_subitems !== 'boolean') return { error: `Item ${code}: "Is sum of sub-items?" must be Yes or No` };
+
+      // Always written out, so a saved format never depends on the old inferred rule.
+      const node = { code, title, measurement, sum_of_subitems: n.sum_of_subitems === true, children: [] };
       out.push(node);
       if (n.children?.length) stack.push({ raw: n.children, out: node.children, prefix: code });
     }
+  }
+
+  // A "sum of sub-items" item must really have sub-items to sum (checked on the cleaned-up tree).
+  const check = [...root];
+  while (check.length) {
+    const node = check.pop();
+    if (node.sum_of_subitems) {
+      const why = sumBlocker(node);
+      if (why) return { error: `Item ${node.code}: it cannot be a sum of its sub-items — ${why}` };
+    }
+    for (const c of node.children) check.push(c);
   }
   return { nodes: root, count };
 }
@@ -100,7 +146,7 @@ export function rowsOf(schema) {
     const stack = [...schema.nodes].reverse().map((n) => ({ n, depth: 0 }));
     while (stack.length) {
       const { n, depth } = stack.pop();
-      rows.push({ code: n.code, title: n.title, measurement: n.measurement || '', depth });
+      rows.push({ code: n.code, title: n.title, measurement: n.measurement || '', depth, sum: n.sum_of_subitems === true });
       for (let i = (n.children || []).length - 1; i >= 0; i -= 1) stack.push({ n: n.children[i], depth: depth + 1 });
     }
     return rows;

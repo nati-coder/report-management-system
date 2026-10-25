@@ -7,3 +7,5 @@ export const versions = (params) => unwrap(api.get('/templates/versions', { para
 export const versionTree = (id, teamId) => unwrap(api.get(`/templates/versions/${id}`, { params: { team_id: teamId } }));
 /** Zonal Plan Expert only: create a report_templates row for every team in the version's department. */
 export const createForVersion = (body) => unwrap(api.post('/templates/for-version', body));
+/** System Admin only: close a report version — no more templates or updates under it. */
+export const closeVersion = (id) => unwrap(api.post(`/templates/versions/${id}/close`));

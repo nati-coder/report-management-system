@@ -1,13 +1,21 @@
 import bcrypt from 'bcryptjs';
 import { pool } from '../config/db.js';
+import env from '../config/env.js';
 import { ROLES } from '../src/constants/roles.js';
 
 /**
  * Seeds a minimal starting dataset: one zone, one woreda, one
  * department/team, and a default admin account so you can log in
  * on a fresh database. Safe to re-run (uses ON CONFLICT DO NOTHING).
+ * The admin's email and password come from ADMIN_EMAIL / ADMIN_PASSWORD in .env.
  */
+const DEFAULT_ADMIN_PASSWORD = 'ChangeMe123!';
+
 async function seed() {
+  if (env.isProd && env.ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD) {
+    console.error('[seed] NODE_ENV is production: set ADMIN_PASSWORD in .env to something other than the default before seeding.');
+    process.exit(1);
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -35,15 +43,15 @@ async function seed() {
       );
     }
 
-    const passwordHash = await bcrypt.hash('ChangeMe123!', 12);
+    const passwordHash = await bcrypt.hash(env.ADMIN_PASSWORD, 12);
     await client.query(
       `INSERT INTO users (name, email, password_hash, role)
        VALUES ($1,$2,$3,$4) ON CONFLICT (email) DO NOTHING`,
-      ['System Admin', 'admin@rms.local', passwordHash, ROLES.ADMIN]
+      ['System Admin', env.ADMIN_EMAIL, passwordHash, ROLES.ADMIN]
     );
 
     await client.query('COMMIT');
-    console.log('[seed] done. Default admin: admin@rms.local / ChangeMe123! (change immediately)');
+    console.log(`[seed] done. Admin: ${env.ADMIN_EMAIL}${env.ADMIN_PASSWORD === DEFAULT_ADMIN_PASSWORD ? ' / ' + DEFAULT_ADMIN_PASSWORD + ' (the default — change it immediately)' : ''}`);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

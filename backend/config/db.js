@@ -35,4 +35,24 @@ export async function withTransaction(fn) {
   }
 }
 
+/**
+ * Run `fn` while holding a Postgres advisory lock named `name`, so that two requests doing the same
+ * read-check-write sequence (e.g. adding up woreda targets against the zone plan) take turns instead of
+ * both passing the check. The lock is held on its own connection; `fn` may use `query` / `withTransaction`.
+ * Always released, even when `fn` throws.
+ */
+export async function withAdvisoryLock(name, fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT pg_advisory_lock(hashtext($1))', [name]);
+    try {
+      return await fn();
+    } finally {
+      await client.query('SELECT pg_advisory_unlock(hashtext($1))', [name]);
+    }
+  } finally {
+    client.release();
+  }
+}
+
 export default pool;

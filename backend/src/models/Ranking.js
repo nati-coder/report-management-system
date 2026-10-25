@@ -53,19 +53,30 @@ const Ranking = {
        ORDER BY wr.overall_rank`, [year, period_type, zone_id ?? null]);
     return rows;
   },
-  /** Raw metrics per team for the ranking engine (deadline = 5th day of the month after the period) */
-  async teamMetrics({ woreda_id, period_type, year, month, quarter }) {
+  /**
+   * Raw metrics per team for the ranking engine. Only reports that have REACHED THE ZONE count (drafts and
+   * reports still waiting for the woreda plan expert are the woreda's own business), and each is judged against
+   * the deadline the zone actually set in report_windows; when a month has no window the old default applies
+   * (the 5th day of the Ethiopian month after the period).
+   */
+  async teamMetrics({ woreda_id, year, months }) {
     const { rows } = await query(
       `WITH r AS (
          SELECT rp.id, rp.team_id, rp.status, rp.submitted_at,
-                (make_date(rp.year + d.yr, d.mo, d.dy) + INTERVAL '4 days') AS deadline
+                COALESCE(
+                  rw.closes_at,
+                  ((make_date(rp.year + d.yr, d.mo, d.dy) + INTERVAL '4 days')::timestamp AT TIME ZONE 'Africa/Addis_Ababa')
+                ) AS deadline
          FROM reports rp
-         JOIN (VALUES (7,7,8,7),(8,7,9,11),(9,7,10,11),(10,7,11,10),(11,7,12,10),(12,8,1,9),
-                      (1,8,2,8),(2,8,3,10),(3,8,4,9),(4,8,5,9),(5,8,6,8),(6,8,7,8)) AS d(slot, yr, mo, dy)
-           ON d.slot = COALESCE(rp.month, (ARRAY[9,12,3,6])[rp.quarter], 6)
-         WHERE rp.woreda_id = $1 AND rp.type = $2 AND rp.year = $3
-           AND ($4::int IS NULL OR rp.month = $4) AND ($5::int IS NULL OR rp.quarter = $5)
+         JOIN woredas wd ON wd.woreda_id = rp.woreda_id
+         LEFT JOIN report_windows rw
+                ON rw.format_id = rp.format_id AND rw.zone_id = wd.zone_id AND rw.year = rp.year AND rw.month = rp.month
+         LEFT JOIN (VALUES (7,7,8,7),(8,7,9,11),(9,7,10,11),(10,7,11,10),(11,7,12,10),(12,8,1,9),
+                           (1,8,2,8),(2,8,3,10),(3,8,4,9),(4,8,5,9),(5,8,6,8),(6,8,7,8)) AS d(slot, yr, mo, dy)
+                ON d.slot = rp.month
+         WHERE rp.woreda_id = $1 AND rp.type = 'monthly' AND rp.year = $2 AND rp.month = ANY($3::int[])
            AND rp.team_id IS NOT NULL
+           AND (rp.status IN ('submitted','reviewing','approved') OR (rp.status = 'rejected' AND rp.reviewed_by IS NOT NULL))
        ),
        q AS (
          SELECT r.team_id, AVG(tf.score / NULLIF(tf.max_score, 0) * 100) AS avg_quality
@@ -75,12 +86,12 @@ const Ranking = {
               COUNT(*)::int AS total_reports,
               COUNT(*) FILTER (WHERE r.status = 'approved')::int AS approved_reports,
               COUNT(*) FILTER (WHERE r.status = 'rejected')::int AS rejected_reports,
-              AVG(CASE WHEN r.submitted_at IS NULL THEN NULL
+              AVG(CASE WHEN r.submitted_at IS NULL OR r.deadline IS NULL THEN NULL
                        ELSE GREATEST(0, EXTRACT(EPOCH FROM (r.submitted_at - r.deadline)) / 86400) END) AS avg_days_late,
               MAX(q.avg_quality) AS avg_quality
        FROM r LEFT JOIN q ON q.team_id = r.team_id
        GROUP BY r.team_id`,
-      [woreda_id, period_type, year, month ?? null, quarter ?? null]);
+      [woreda_id, year, months]);
     return rows;
   },
 };

@@ -15,6 +15,10 @@ import { useNotify } from '../../context/NotificationContext.jsx';
 import { ROLES } from '../../utils/roleHelpers.js';
 import SchemaBuilderCard from '../../components/templates/SchemaBuilderCard.jsx';
 import { newSection, sectionsToSchema, schemaToSections, validateSections } from '../../utils/schemaBuilder.js';
+import { currentFiscalYear } from '../../utils/periods.js';
+
+/** Sections are optional: a builder that is still empty means "no sections yet". */
+const isBlank = (sections) => sections.every((s) => !s.title.trim() && s.fields.every((f) => !f.label.trim()));
 
 export default function TemplateBuilderPage() {
   const { id } = useParams();
@@ -33,7 +37,7 @@ export default function TemplateBuilderPage() {
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [titleTouched, setTitleTouched] = useState(false);
 
-  const [meta, setMeta] = useState({ title: '', type: 'monthly', start_year: new Date().getFullYear(), end_year: '', templateVersion: '1.0' });
+  const [meta, setMeta] = useState({ title: '', type: 'monthly', start_year: currentFiscalYear(), end_year: '', templateVersion: '1.0' });
   const [sections, setSections] = useState([newSection()]);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -95,7 +99,7 @@ export default function TemplateBuilderPage() {
     if (!versionId) e.versionId = 'Choose a report version';
     if (!teamId) e.teamId = 'Choose a team';
     if (!meta.title || meta.title.trim().length < 2) e.title = 'Title is required (min 2 characters)';
-    Object.assign(e, validateSections(sections));
+    if (!isBlank(sections)) Object.assign(e, validateSections(sections));
 
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -114,7 +118,8 @@ export default function TemplateBuilderPage() {
         version_id: Number(versionId),
         department_id: selectedVersion.dep_id,
         team_id: Number(teamId),
-        json_schema: sectionsToSchema(sections),
+        // Sections are optional — leave them out while the builder is empty.
+        ...(isBlank(sections) ? {} : { json_schema: sectionsToSchema(sections) }),
       };
       if (existingTemplateId) await templateService.update(existingTemplateId, body);
       else await templateService.create(body);
@@ -135,15 +140,21 @@ export default function TemplateBuilderPage() {
   if (refLoading || versionsLoading) return <Loader />;
 
   const previewSchema = sectionsToSchema(sections);
+  const versionClosed = !!selectedVersion?.closed_at;
 
   return (
     <>
       <Header
         title={existingTemplateId ? 'Edit team report template' : 'New team report template'}
         subtitle="Build the sections, KPIs and targets a specific team will report against for a report version."
-        actions={<Button loading={saving} onClick={save}>{existingTemplateId ? 'Save changes' : 'Create template'}</Button>}
+        actions={<Button loading={saving} disabled={versionClosed} onClick={save}>{existingTemplateId ? 'Save changes' : 'Create template'}</Button>}
       />
 
+      {versionClosed && (
+        <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+          This report version is closed — its templates can no longer be created or changed.
+        </p>
+      )}
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <Card title="Report version & team">
@@ -152,7 +163,7 @@ export default function TemplateBuilderPage() {
                 <label className="label">Report version</label>
                 <select className="input" value={versionId} disabled={!!id} onChange={(e) => setVersionId(e.target.value)}>
                   <option value="">Select…</option>
-                  {(versions || []).map((v) => <option key={v.id} value={v.id}>{v.name} ({v.year}){v.approval_date ? '' : ' — draft'}</option>)}
+                  {(versions || []).filter((v) => !v.closed_at || String(v.id) === String(versionId)).map((v) => <option key={v.id} value={v.id}>{v.name} ({v.year}){v.closed_at ? ' — closed' : v.approval_date ? '' : ' — draft'}</option>)}
                 </select>
                 {errors.versionId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.versionId}</p>}
               </div>
@@ -171,26 +182,26 @@ export default function TemplateBuilderPage() {
             )}
           </Card>
 
-          <Card title="Template details">
+          <Card title="Template details (only the title is required)">
             <div className="space-y-3">
               <div>
-                <label className="label">Title</label>
+                <label className="label">Title <span className="text-red-500">*</span></label>
                 <input className="input" value={meta.title} onChange={(e) => { setTitleTouched(true); setMeta({ ...meta, title: e.target.value }); }} />
                 {errors.title && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.title}</p>}
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="label">Type</label>
+                  <label className="label">Type (optional)</label>
                   <select className="input" value={meta.type} onChange={(e) => setMeta({ ...meta, type: e.target.value })}>
                     <option value="monthly">monthly</option><option value="quarterly">quarterly</option><option value="annual">annual</option>
                   </select>
                 </div>
                 <div>
-                  <label className="label">Start year</label>
+                  <label className="label">Start year (EC, optional)</label>
                   <input type="number" className="input" value={meta.start_year} onChange={(e) => setMeta({ ...meta, start_year: e.target.value })} />
                 </div>
                 <div>
-                  <label className="label">Template version</label>
+                  <label className="label">Template version (optional)</label>
                   <input className="input" value={meta.templateVersion} onChange={(e) => setMeta({ ...meta, templateVersion: e.target.value })} />
                 </div>
               </div>

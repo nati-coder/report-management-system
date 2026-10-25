@@ -9,7 +9,8 @@ import { calcParents, toNumbers } from './planChecks.js';
 
 export const MONTHS = 12;
 /** The plan year runs Hamle → Sene (Ethiopian fiscal year). The API and database keep the slot number (Hamle = 7 … Sene = 6). */
-export const MONTH_NAMES = ['Hamle', 'Nehase', 'Meskerem', 'Tikimt', 'Hidar', 'Tahsas', 'Tir', 'Yekatit', 'Megabit', 'Miazia', 'Genbot', 'Sene']; export const MONTH_NUMBERS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
+export const MONTH_NAMES = ['Hamle', 'Nehase', 'Meskerem', 'Tikimt', 'Hidar', 'Tahsas', 'Tir', 'Yekatit', 'Megabit', 'Miazia', 'Genbot', 'Sene'];
+export const MONTH_NUMBERS = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
 const r2 = (n) => Math.round(n * 100) / 100;
 
 /** Twelve strings that add up to `total` exactly (or all equal to it for a percentage). */

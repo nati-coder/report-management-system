@@ -6,10 +6,10 @@ Everything is scoped by the signed-in user's **zone, department and team**.
 
 ## Features
 
-- **Reference data and users**: zones, woredas, departments, teams and users, with nine roles.
+- **Reference data and users**: zones, woredas, departments, teams and users, with nine roles. A department is mandatory for every role except the admin; a team is mandatory for experts and team leaders and not used for department heads and plan experts (zonal and woreda).
 - **Annual report versions and templates**: one template per team under each version.
-- **Report formats**: a numbered outline (`1.` → `1.1.` → `1.1.1.`) of items, each with a title and a measurement. Draft → pending approval → approved or rejected. Approved formats can be previewed as a table, downloaded as Excel or CSV, and printed.
-- **Annual plan, zone first**: the Zonal Expert sets the zone plan, then plans each woreda. Woreda totals must add up to the zone plan, and each parent item must equal the sum of its sub-items. Cascading notifies the woreda and locks its plan.
+- **Report formats**: a numbered outline (`1.` → `1.1.` → `1.1.1.`) of items, each with a title, a measurement and **Is sum of sub-items? (Yes / No)** — Yes means the item's value is calculated automatically from its sub-items, No means it is entered by hand. Draft → pending approval → approved or rejected. Approved formats can be previewed as a table, downloaded as Excel or CSV, and printed.
+- **Annual plan, zone first**: the Zonal Expert sets the zone plan, then plans each woreda. Woreda totals must add up to the zone plan, and every item marked "sum of sub-items" is calculated from its sub-items (plans and reports alike). Cascading notifies the woreda and locks its plan.
 - **Plan acceptance**: the Woreda Department Head accepts a cascaded plan (which locks it) or rejects it with a reason, sending it back to the zone to revise and cascade again.
 - **Reports based on the plan**: a woreda can only file a report against a plan it has accepted. The entry form shows only the planned items with their targets, and the server validates every entry.
 - **Review workflow**: draft → awaiting woreda plan expert → approved by woreda → (woreda submits) → in review → approved or rejected, with notifications.
@@ -58,6 +58,7 @@ cp .env.example .env        # set DATABASE_URL and JWT_SECRET
 npm install
 npm run migrate             # applies db/schema.sql and db/migrations/*.sql
 npm run seed                # sample zone, woreda, department and an admin user
+npm test                    # unit tests (no database needed)
 npm run dev                 # http://localhost:5000/api/v1/health
 ```
 
@@ -82,11 +83,12 @@ Backend `.env`:
 |---|---|
 | `PORT` | API port (default `5000`) |
 | `DATABASE_URL` | PostgreSQL connection string |
-| `JWT_SECRET` | Long random string used to sign tokens |
+| `JWT_SECRET` | Long random string used to sign tokens. In production it must be at least 32 characters and not the `.env.example` placeholder, or the API refuses to start |
 | `JWT_EXPIRES_IN` | Token lifetime (default `8h`) |
 | `CORS_ORIGINS` | Allowed frontend origins (default `http://localhost:5173`) |
+| `TRUST_PROXY` | Number of reverse proxies in front of the API (default `0` = none). Set it to match your deployment, otherwise the login rate limit cannot tell users apart (or can be spoofed) |
 | `UPLOAD_DIR`, `MAX_UPLOAD_MB` | Excel import uploads |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Admin created by `npm run seed` |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Admin created by `npm run seed` (in production the seed refuses the default password) |
 
 Frontend `.env`: `VITE_API_URL` is the API base URL.
 
@@ -117,13 +119,12 @@ Not built yet, in rough order:
 
 - Plan versus actual: compare reported figures with the plan on the zone side.
 - Woreda downloads: let woreda users download and print a format.
-- Report scoping: narrow zonal experts to their own team's reports (they currently see every team's reports in their zone).
 - Quarterly and half-year *plans* as their own cascade (monthly plans and monthly reporting periods exist; quarter/half/annual reports are summed from the months).
 - Old role names: update any users created as `plan_expert` or `team_leader`.
 
 ## Contributing
 
-Issues and pull requests are welcome. Please keep the plan consistency helpers in `backend/src/utils/planChecks.js` and `frontend/src/utils/planChecks.js` in step.
+Issues and pull requests are welcome. Please keep the plan consistency helpers in `backend/src/utils/planChecks.js` and `frontend/src/utils/planChecks.js` in step; `npm test` in `backend/` fails if the shared helpers drift apart.
 
 ## License
 

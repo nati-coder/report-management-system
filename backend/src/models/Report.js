@@ -1,7 +1,8 @@
 import { query } from '../../config/db.js';
 
 const Report = {
-  async list({ woredaIds, zone_id, status, excludeDraft, type, year, team_id, created_by, limit = 50, offset = 0 } = {}) {
+  /** scope_department_id / scope_team_id come from the caller's account (never from the client); legacy reports without a format pass the department filter. */
+  async list({ woredaIds, zone_id, status, excludeDraft, type, year, team_id, created_by, scope_department_id, scope_team_id, limit = 50, offset = 0 } = {}) {
     const cond = []; const p = [];
     const add = (sql, v) => { p.push(v); cond.push(sql.replace('?', `$${p.length}`)); };
     if (woredaIds) add('r.woreda_id = ANY(?)', woredaIds);
@@ -11,6 +12,8 @@ const Report = {
     if (year) add('r.year = ?', year);
     if (team_id) add('r.team_id = ?', team_id);
     if (created_by) add('r.created_by = ?', created_by);
+    if (scope_department_id) add('(r.format_id IS NULL OR t.department_id = ?)', scope_department_id);
+    if (scope_team_id) add('(r.format_id IS NULL OR r.team_id = ?)', scope_team_id);
     if (excludeDraft) cond.push("r.status NOT IN ('draft','pending_woreda','woreda_approved')"); // zone users: only what the woreda has submitted
     p.push(limit, offset);
     const { rows } = await query(
@@ -18,6 +21,8 @@ const Report = {
               r.status, r.source, r.submitted_at, r.created_at, r.updated_at, w.name AS woreda_name, tm.name AS team_name
        FROM reports r LEFT JOIN woredas w ON w.woreda_id = r.woreda_id
        LEFT JOIN teams tm ON tm.id = r.team_id
+       LEFT JOIN report_formats rf ON rf.id = r.format_id
+       LEFT JOIN report_templates t ON t.id = rf.template_id
        ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''}
        ORDER BY r.created_at DESC LIMIT $${p.length - 1} OFFSET $${p.length}`, p);
     return rows;

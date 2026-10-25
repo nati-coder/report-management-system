@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import Button from '../common/Button.jsx';
 import GridCell from '../common/GridCell.jsx';
 import { schemaRows, isPercent } from '../../utils/formatTree.js';
-import { fmt } from '../../utils/planChecks.js';
+import { fmt, hierarchyOf, calcParents, toNumbers } from '../../utils/planChecks.js';
+import EcDateTimeInput from '../common/EcDateTimeInput.jsx';
 
 /**
  * Renders inputs from a template json_schema:
@@ -11,7 +12,8 @@ import { fmt } from '../../utils/planChecks.js';
  *
  * Also renders a report-format hierarchy: { "nodes": [ { code, title, measurement, children } ] } as a
  * numbered outline (1. / 1.1. / 1.1.1. …). Every item with a measurement gets a numeric input
- * (values are keyed by the item's code); items without one are headings.
+ * (values are keyed by the item's code); items without one are headings. An item the format marks
+ * "Is sum of sub-items? Yes" is not typed: it is calculated from its sub-items as they are entered.
  */
 const flatten = (schema) => (schema?.sections ? schema.sections : [{ title: null, fields: schema?.fields || [] }]);
 
@@ -24,10 +26,16 @@ const flatten = (schema) => (schema?.sections ? schema.sections : [{ title: null
  */
 export default function DynamicReportForm({ schema, plan = null, target = null, planLabel = 'Plan', initialData = {}, readOnly = false, onSave, saving = false }) {
   const sections = useMemo(() => flatten(schema), [schema]);
-  const [data, setData] = useState(initialData);
-  const [errors, setErrors] = useState({});
-  const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
   const isTree = Array.isArray(schema?.nodes);
+  const parents = useMemo(() => (isTree ? hierarchyOf(schema) : []), [schema, isTree]);
+  const [data, setData] = useState(() => (parents.length ? calcParents(parents, initialData) : initialData));
+  const [errors, setErrors] = useState({});
+  const set = (k, v) => setData((d) => (parents.length ? calcParents(parents, { ...d, [k]: v }) : { ...d, [k]: v }));
+  // a sum item is worked out from its sub-items as soon as one of them has a value
+  const computed = useMemo(() => {
+    const nums = toNumbers(data);
+    return new Set(parents.filter((p) => p.children.some((c) => nums[c.key] !== undefined)).map((p) => p.key));
+  }, [parents, data]);
   const allRows = useMemo(() => (isTree ? schemaRows(schema.nodes) : []), [schema, isTree]);
   const planned = (code) => plan?.[code] !== undefined;
   // only what the plan covers is sent: anything else left over from an older draft is dropped
@@ -87,7 +95,7 @@ export default function DynamicReportForm({ schema, plan = null, target = null, 
         );
       case 'boolean':
         return <input type="checkbox" id={f.key} disabled={readOnly} checked={!!data[f.key]} onChange={(e) => set(f.key, e.target.checked)} className="h-4 w-4" />;
-      case 'date': return <input type="date" {...common} onChange={(e) => set(f.key, e.target.value)} />;
+      case 'date': return <EcDateTimeInput id={f.key} withTime={false} disabled={readOnly} value={data[f.key] ?? ''} onChange={(v) => set(f.key, v)} />;
       case 'number': case 'percentage': case 'currency':
         return <input type="number" step="any" {...common} onChange={(e) => set(f.key, e.target.value === '' ? '' : Number(e.target.value))} />;
       default: return <input type="text" {...common} onChange={(e) => set(f.key, e.target.value)} />;
@@ -135,8 +143,10 @@ export default function DynamicReportForm({ schema, plan = null, target = null, 
                     {label}
                     <td className={`${D} text-xs text-slate-500 dark:text-slate-400`}>{n.measurement}</td>
                     {plan && <td className={`${D} text-right tabular-nums`}>{t !== undefined ? `${fmt(Number(t))}${pct ? '%' : ''}` : '—'}</td>}
-                    {readOnly ? (
-                      <td className={`${D} text-right font-semibold tabular-nums`}>{has ? `${fmt(Number(v))}${pct ? '%' : ''}` : '—'}</td>
+                    {readOnly || computed.has(n.code) ? (
+                      <td className={`${D} text-right font-semibold tabular-nums`} title={computed.has(n.code) ? 'Calculated: the sum of its sub-items' : undefined}>
+                        {has ? `${fmt(Number(v))}${pct ? '%' : ''}` : '—'}{computed.has(n.code) && !readOnly && <span className="ml-1 text-xs font-normal text-slate-400">Σ</span>}
+                      </td>
                     ) : (
                       <td className="border border-slate-300 p-0 dark:border-slate-600">
                         <GridCell r={input} c={0} label={`Report for ${n.title}`} invalid={!!errors[n.code]} value={has ? String(v) : ''} onChange={(x) => set(n.code, x)} />

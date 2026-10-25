@@ -33,7 +33,10 @@ export default function LoginPage() {
         {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
       </button>
       <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-xl border border-slate-200 bg-white p-8 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50">Woreda-Zonal RMS</h1>
+        <div className="flex flex-col items-center gap-3 text-center">
+          <img src="/logo.png" alt="Woreda-Zonal RMS logo" width="80" height="80" className="h-20 w-20" />
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-slate-50">Woreda-Zonal RMS</h1>
+        </div>
         <div>
           <label className="label" htmlFor="email">{t('email')}</label>
           <input id="email" type="email" required autoComplete="username" className="input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />

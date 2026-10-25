@@ -1,4 +1,5 @@
 import Ranking from '../models/Ranking.js';
+import { monthsOf } from '../utils/periods.js';
 
 /** Weights sum to 1. Timeliness / accuracy (approval rate) / quality (expert scoring). */
 export const WEIGHTS = { timeliness: 0.4, accuracy: 0.3, quality: 0.3 };
@@ -9,7 +10,7 @@ const accuracyScore = (m) => (m.total_reports ? (m.approved_reports / m.total_re
 const qualityScore = (m) => (m.avg_quality === null || m.avg_quality === undefined ? 0 : Number(m.avg_quality));
 
 export async function computeTeamRanking(period) {
-  const metrics = await Ranking.teamMetrics(period);
+  const metrics = await Ranking.teamMetrics({ ...period, months: monthsOf(period) });
   const scored = metrics.map((m) => {
     const t = timelinessScore(m.avg_days_late === null ? null : Number(m.avg_days_late));
     const a = accuracyScore(m);

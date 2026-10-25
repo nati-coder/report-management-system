@@ -3,12 +3,42 @@
  * that nest without limit, each with only a title and a measurement. Mirrors the server's
  * backend/src/utils/formatTree.js: numbering is by position, and plan / report values are
  * keyed by the item's code. A blank measurement = a heading with no value of its own.
+ * `sum_of_subitems` (Yes / No): the item's value is the sum of its sub-items (Yes) or typed by hand (No).
  */
 export const MAX_ITEMS = 5000;
 export const isPercent = (m) => /^\s*(%|percent|percentage)\s*$/i.test(m || '');
 
 const uid = () => crypto.randomUUID();
-export const newNode = (extra = {}) => ({ _id: uid(), title: '', measurement: '', children: [], ...extra });
+export const newNode = (extra = {}) => ({ _id: uid(), title: '', measurement: '', sum_of_subitems: false, children: [], ...extra });
+
+// ---------- sums of sub-items (mirrors backend/src/utils/formatTree.js) ----------
+const sameMeasurement = (a, b) => (a || '').trim().toLowerCase() === (b || '').trim().toLowerCase();
+const measured = (n) => !!(n.measurement || '').trim();
+
+/** The nearest measured items below `node`, looking through headings, in order. */
+export function measuredSubitems(node) {
+  const found = [];
+  const inner = [...(node.children || [])].reverse();
+  while (inner.length) {
+    const c = inner.pop();
+    if (measured(c)) found.push(c);
+    else for (let i = (c.children || []).length - 1; i >= 0; i -= 1) inner.push(c.children[i]);
+  }
+  return found;
+}
+
+/** Why `node` cannot be a sum of its sub-items, or null when it can. */
+export function sumBlocker(node) {
+  if (!measured(node)) return 'a heading has no value of its own, so it cannot be a sum';
+  if (isPercent(node.measurement)) return 'a percentage is a rate, not a sum';
+  const subs = measuredSubitems(node);
+  if (!subs.length) return 'it needs at least one sub-item with a measurement to sum';
+  if (!subs.every((c) => sameMeasurement(c.measurement, node.measurement))) return `its sub-items must all use the same measurement (${node.measurement.trim()}) to be summed`;
+  return null;
+}
+
+/** The sub-items the node is the sum of, or null when it is not summable by structure. */
+export const summableSubitems = (node) => (sumBlocker(node) ? null : measuredSubitems(node));
 
 // ---------- reading a tree (iterative: any depth) ----------
 
@@ -101,7 +131,7 @@ export const countDescendants = (node) => flattenTree([node]).length - 1;
 export function treeToSchema(nodes) {
   const walk = (list, prefix) => list.map((n, i) => {
     const code = prefix ? `${prefix}.${i + 1}` : String(i + 1);
-    return { code, title: n.title, measurement: n.measurement || '', children: walk(n.children, code) };
+    return { code, title: n.title, measurement: n.measurement || '', sum_of_subitems: measured(n) && n.sum_of_subitems === true, children: walk(n.children, code) }; // a heading is never a sum
   });
   return { nodes: walk(nodes, '') };
 }
@@ -115,7 +145,13 @@ const NUMERIC = ['number', 'percentage', 'currency'];
  */
 export function schemaToTree(schema) {
   if (Array.isArray(schema?.nodes) && schema.nodes.length) {
-    const build = (list) => list.map((n) => newNode({ title: n.title || '', measurement: n.measurement || '', children: build(n.children || []) }));
+    // A format saved before the Yes / No existed has no value: it behaved as "Yes" wherever the old rule applied,
+    // so the editor shows that, and saving does not silently change how its plans add up.
+    const build = (list) => list.map((n) => newNode({
+      title: n.title || '', measurement: n.measurement || '',
+      sum_of_subitems: typeof n.sum_of_subitems === 'boolean' ? n.sum_of_subitems : summableSubitems(n) !== null,
+      children: build(n.children || []),
+    }));
     return build(schema.nodes);
   }
   const converted = (schema?.sections || []).map((s) => newNode({
@@ -138,6 +174,10 @@ export function validateTree(nodes) {
     if (!node.title.trim()) e[code] = 'A title is required';
     else if (node.title.length > 500) e[code] = 'The title is too long (max 500 characters)';
     else if ((node.measurement || '').length > 100) e[code] = 'The measurement is too long (max 100 characters)';
+    else if (node.sum_of_subitems && measured(node)) {
+      const why = sumBlocker(node);
+      if (why) e[code] = `Cannot be a sum of its sub-items — ${why}`;
+    }
   }
   return e;
 }

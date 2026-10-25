@@ -96,6 +96,15 @@ A woreda report can only be created against a plan the woreda has **accepted** (
 Entries (`data`, keyed by item code) are validated on create and on every save: only items the accepted plan has a target for, numbers only, never negative, percentages 0–100; blank = not reported yet. A report saved against a format with no accepted plan can't be edited. Formats in the older section/KPI layout keep their entries unvalidated (the accepted-plan rule still applies).
 In the UI, *New report* lists the woreda's accepted plans (the plan fixes format and year), and the entry form shows only the planned items, each with its target and the % achieved. Zonal reviewers see the same targets next to the woreda's figures.
 
+## User placement rules
+`utils/userRules.js` is the single definition (the create-user form mirrors it in `frontend/src/utils/roleHelpers.js`). A **department is required for every role except the admin**. A **team is required** for experts and team leaders (zonal and woreda) and is **never kept** for department heads and plan experts (zonal and woreda): the API drops a `team_id` sent for those roles, on create and on update. Zone / woreda rules are unchanged (woreda roles need a woreda, zonal roles never have one).
+
+## Report versions
+`POST /templates/versions` — the title/description is optional (`name`). Without one the version is named `Report version <year>`; the UI sends `v<number>` or `v<number> — <title>`. A duplicate department + year + name returns 409.
+
+## Sum of sub-items (report formats)
+Every item of a report format carries `sum_of_subitems` (`true` = "Is sum of sub-items? Yes", `false` = No). It is saved on each node of `schema_definition` (JSON, no migration). `normalizeNodes` refuses Yes on an item that cannot be a sum: a heading, a percentage, no measured sub-item, or sub-items in a different measurement. **Yes**: the server calculates the item as the sum of its nearest measured sub-items (`applySubitemSums` in `utils/planChecks.js`) in the zone plan, woreda plans, monthly plans and report entries — whatever the client sent for it. **No**: a stand-alone, hand-entered value, never checked against its sub-items. Formats saved before the flag existed have no value on their nodes and keep the old rule (every measured item whose sub-items share its measurement is a sum), so existing plans are unaffected; the editor shows them as Yes where that rule applied.
+
 ## Department / team scoping (templates and report formats)
 `utils/scope.js` is the single rule. A **zonal** user can only read or author report templates and formats of the department on their account;
 experts and team leaders are further confined to their own **team** when the account has one (an expert with a department but no team sees the whole department).
@@ -129,3 +138,18 @@ On screen, an approved format is shown as this table, with **Download Excel / Do
 Fallbacks so nothing gets stuck: a woreda with no plan expert in that department skips the approval step; a plan expert's own report counts as approved by them; reports with no report format (legacy) still go straight to the zone.
 
 **One period per month.** `report_windows` stays one row per team format (that is what enforces the open/close times on reports). The zone sees a **period** = zone + department + month, however many teams it covers: `GET /report-windows/periods`. A woreda counts as *submitted* only when all its team reports have reached the zone; the detail endpoint lists, per woreda, its state (`submitted` / `in_progress` with `approved of expected` / `not_started` / `no_plan`) and each team's report status. Changing dates or removing a period applies to every team's window of that month. Opening a format for a month that is already open adds it to that period with the period's dates.
+
+## Access rules for reports (one rule everywhere)
+`utils/reportAccess.js` → `assertReportAccess` is used by every report endpoint and by team scoring: the report's woreda must be in your scope; the zone never sees what is still inside the woreda; and for a report filed against a format the format's **department** (and **team**, for experts and team leaders) must be the one on your account — woreda users and zonal reviewers alike. Lists (`GET /reports`) apply the same filter; an account with no department sees nothing. Submitting, editing and deleting a woreda report is for its author, the woreda dept head / team leader, or the admin (`canManageReport` in `utils/scope.js`).
+
+## Concurrency
+Check-then-write sequences take a Postgres advisory lock (`withAdvisoryLock` in `config/db.js`, so PostgreSQL ≥ 9.1): the zone-total checks of `PUT /plans/zone` and `POST /plans/cascade` (per format + zone + year), and "approve a team report, then forward the woreda if complete" (per woreda + month). Migration `0008` adds unique indexes so a woreda cannot have two reports for the same format and period (a second `POST /reports` → 409).
+
+## Sessions
+Migration `0009` adds `users.password_changed_at`; a token issued before it is rejected, so changing or resetting a password ends every older session. `POST /auth/change-password` returns a fresh `token` for the current session. Login does the same bcrypt work whether or not the email exists.
+
+## Rankings
+Reports are filed monthly only, so `monthly`, `quarterly` and `annual` team rankings are all computed from the monthly reports of the months they cover (`monthsOf` in `utils/periods.js`). Only reports that have reached the zone count. Timeliness is measured against the deadline the zone set in `report_windows`; a month with no reporting period falls back to the 5th of the following Ethiopian month.
+
+## Legacy Excel import
+`/imports` still writes to the old `annual_plans` / `plan_values` tables, separate from the new `plans`. It is now limited to the importer's own department (and team, for a zonal expert), checks the file's real type, and only lists import logs of the caller's zone. Whether to migrate or retire it is still open.

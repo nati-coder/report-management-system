@@ -7,10 +7,11 @@ import useAuth from '../../hooks/useAuth.js';
 import { useWoredaRankings } from '../../hooks/useRankings.js';
 import * as referenceService from '../../services/referenceService.js';
 import { ROLES } from '../../utils/roleHelpers.js';
+import { currentFiscalYear } from '../../utils/periods.js';
 
 export default function WoredaRankingsPage() {
   const { user } = useAuth();
-  const [year, setYear] = useState(new Date().getFullYear());
+  const [year, setYear] = useState(currentFiscalYear());
   const [periodType, setPeriodType] = useState('annual');
   const { data: ref } = useFetch(() => referenceService.all(), []);
   const { data: existing, loading, reload } = useWoredaRankings({ year, period_type: periodType });

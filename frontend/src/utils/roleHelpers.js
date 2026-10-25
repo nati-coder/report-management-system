@@ -13,6 +13,11 @@ export const ROLES = {
 export const ZONAL_ROLES = [ROLES.ZONAL_DEPT_HEAD, ROLES.ZONAL_EXPERT, ROLES.ZONAL_PLAN_EXPERT, ROLES.ZONAL_TEAM_LEADER];
 export const WOREDA_ROLES = [ROLES.WOREDA_DEPT_HEAD, ROLES.WOREDA_TEAM_LEADER, ROLES.WOREDA_EXPERT, ROLES.WOREDA_PLAN_EXPERT];
 
+/** Roles that belong to a team: choosing one is mandatory when the account is created. */
+export const TEAM_REQUIRED_ROLES = [ROLES.ZONAL_EXPERT, ROLES.ZONAL_TEAM_LEADER, ROLES.WOREDA_EXPERT, ROLES.WOREDA_TEAM_LEADER];
+/** Department-level and plan-level roles (zonal and woreda): no team. Mirrors backend/src/utils/userRules.js. */
+export const TEAMLESS_ROLES = [ROLES.ZONAL_DEPT_HEAD, ROLES.WOREDA_DEPT_HEAD, ROLES.ZONAL_PLAN_EXPERT, ROLES.WOREDA_PLAN_EXPERT];
+
 export const hasRole = (user, ...roles) => !!user && (user.role === ROLES.ADMIN || roles.includes(user.role));
 export const isWoredaUser = (u) => WOREDA_ROLES.includes(u?.role);
 export const isZonalUser = (u) => ZONAL_ROLES.includes(u?.role);

@@ -19,6 +19,17 @@ export const RANGES = {
   annual: { label: 'Annual (Hamle–Sene)', months: PLAN_MONTHS },
 };
 
+/**
+ * Which months a ranking period covers. Reports are only filed month by month; quarterly and annual figures are
+ * built from the months, so a quarterly / annual ranking looks at the monthly reports of those months.
+ * `month` / `quarter` left out = the whole fiscal year.
+ */
+export function monthsOf({ period_type, month, quarter }) {
+  if (period_type === 'monthly') return month ? [Number(month)] : PLAN_MONTHS;
+  if (period_type === 'quarterly' && quarter) return RANGES[`q${Number(quarter)}`]?.months ?? PLAN_MONTHS;
+  return PLAN_MONTHS;
+}
+
 /** Report statuses that count (a draft is the woreda's own copy; a rejected report isn't final). */
 export const COUNTED = ['submitted', 'reviewing', 'approved'];
 
