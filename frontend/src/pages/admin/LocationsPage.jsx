@@ -111,12 +111,14 @@ export default function LocationsPage() {
                 { key: 'zone_id', header: 'ID' },
                 { key: 'name', header: 'Name', render: (z) => localName(z) },
                 { key: 'woredas', header: 'Woredas', render: (z) => data.woredas.filter((w) => w.zone_id === z.zone_id).length },
-                { key: 'actions', header: '', render: (z) => (
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => setEditingZone(z)}>Edit</Button>
-                    <Button variant="danger" onClick={() => removeZone(z)}>Delete</Button>
-                  </div>
-                ) },
+                {
+                  key: 'actions', header: '', render: (z) => (
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={() => setEditingZone(z)}>Edit</Button>
+                      <Button variant="danger" onClick={() => removeZone(z)}>Delete</Button>
+                    </div>
+                  )
+                },
               ]}
               rows={data.zones} empty="No zones yet"
             />
@@ -137,12 +139,14 @@ export default function LocationsPage() {
                 { key: 'woreda_id', header: 'ID' },
                 { key: 'name', header: 'Name', render: (w) => localName(w) },
                 { key: 'zone_id', header: 'Zone' },
-                { key: 'actions', header: '', render: (w) => (
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => setEditingWoreda(w)}>Edit</Button>
-                    <Button variant="danger" onClick={() => removeWoreda(w)}>Delete</Button>
-                  </div>
-                ) },
+                {
+                  key: 'actions', header: '', render: (w) => (
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={() => setEditingWoreda(w)}>Edit</Button>
+                      <Button variant="danger" onClick={() => removeWoreda(w)}>Delete</Button>
+                    </div>
+                  )
+                },
               ]}
               rows={data.woredas} empty="No woredas yet"
             />
@@ -159,12 +163,14 @@ export default function LocationsPage() {
               <Button type="submit" loading={savingDept} className="col-span-2">Add department</Button>
             </form>
             <Table columns={[{ key: 'name', header: 'Name' }, { key: 'amharic_name', header: 'Amharic name' },
-              { key: 'actions', header: '', render: (d) => (
+            {
+              key: 'actions', header: '', render: (d) => (
                 <div className="flex gap-2">
                   <Button variant="secondary" onClick={() => setEditingDept(d)}>Edit</Button>
                   <Button variant="danger" onClick={() => removeDept(d)}>Delete</Button>
                 </div>
-              ) },
+              )
+            },
             ]} rows={data.departments} empty="No departments yet" />
           </Card>
           <Card title="Teams">
@@ -180,12 +186,14 @@ export default function LocationsPage() {
               columns={[
                 { key: 'name', header: 'Team' },
                 { key: 'department', header: 'Department', render: (t) => data.departments.find((d) => d.id === t.department_id)?.name || '—' },
-                { key: 'actions', header: '', render: (t) => (
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => setEditingTeam(t)}>Edit</Button>
-                    <Button variant="danger" onClick={() => removeTeam(t)}>Delete</Button>
-                  </div>
-                ) },
+                {
+                  key: 'actions', header: '', render: (t) => (
+                    <div className="flex gap-2">
+                      <Button variant="secondary" onClick={() => setEditingTeam(t)}>Edit</Button>
+                      <Button variant="danger" onClick={() => removeTeam(t)}>Delete</Button>
+                    </div>
+                  )
+                },
               ]}
               rows={data.teams} empty="No teams yet"
             />
