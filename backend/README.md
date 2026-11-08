@@ -34,7 +34,7 @@ Imports are all-or-nothing: any row error rolls back and returns the row message
 ## Ranking formula
 `score = 0.4·timeliness + 0.3·accuracy + 0.3·quality` (weights in `rankingEngineService.js`).
 Timeliness: on time by the 5th of the month after the period = 100, −10 per late day. Accuracy: approved ÷ total reports.
-Quality: average expert score from `team_feedback`.
+Quality: legacy average expert score from `team_feedback`. Reviewers now give written feedback (`review_feedback`, migration 0010), no score; when no team has a quality score, its weight is shared out between timeliness and accuracy.
 
 ## Security
 Helmet, CORS whitelist (`CORS_ORIGINS`), parameterized queries only, login rate-limit, bcrypt(12), audit logging to `activity_logs`.
@@ -79,6 +79,10 @@ Quarterly, half-year and annual reports are **not filed**: they are summed up fr
 ### All woredas' reports on one sheet
 
 `GET /reports/sheet?format_id=&year=&month=|quarter=&zone_id=` (zone level users and the admin) returns every woreda of the zone — the admin: every woreda, or one zone with `zone_id` — with its target and its report for one format and period: `{ format, year, month, quarter, woredas: [{ woreda_id, name, plan: { kind: 'annual'|'monthly', data } | null, report: { id, status, data } | null }] }`. The target is the woreda's accepted annual plan, or for a monthly report that month's cascaded monthly plan. Drafts are never included. Zonal users only get formats of their own department / team. The sheet page (`/reports/sheet`) shows Plan and Report side by side per woreda, with all-woredas totals, and offers Excel / CSV / Print (`POST /plans/export`, now open to every zonal role and the admin).
+
+**Which periods are offered.** The sheet page's *Period* list only offers periods that have started and have reports (`availablePeriods` in `frontend/src/utils/periods.js`): the months of the plan year up to the current Ethiopian month (a past year: all twelve, a future year: none), cut off at the last month that has a submitted report; and the quarters, half years and the year that cover those months, marked "up to *month*" while only partly over. Reports through Tikimt → Hamle … Tikimt, Quarter 1, Quarter 2 (up to Tikimt), Half year 1 (up to Tikimt), Annual (up to Tikimt). The months that have reports come from `GET /reports/sheet/months?format_ids=1,2&year=&zone_id=` → `{ months: [7, 8, 9, 10] }` (same scope rules as the sheet; counted statuses only).
+
+**All teams in one view.** The zonal plan expert, the zonal dept head and the admin (the roles that work across a department's teams) get an *All teams* choice in the format list: the sheet of every team's latest approved monthly format of the year is shown one after another for the same period, each with its own Excel / CSV / Print (the admin can limit it to one department). It is built from one `GET /reports/sheet` call per format, so it needs no new endpoint and every call is scoped as usual. Quarterly-type formats are not part of it (they have no month to line up on).
 
 ### Plan tables: Excel, CSV, print
 
@@ -153,3 +157,12 @@ Reports are filed monthly only, so `monthly`, `quarterly` and `annual` team rank
 
 ## Legacy Excel import
 `/imports` still writes to the old `annual_plans` / `plan_values` tables, separate from the new `plans`. It is now limited to the importer's own department (and team, for a zonal expert), checks the file's real type, and only lists import logs of the caller's zone. Whether to migrate or retire it is still open.
+
+## The zone plan on the Monthly Plan tab
+There is no separate "Zone Plan Overview" page any more. The **Plan** page's *Monthly Plan* tab has a *Zone plan — all woredas* choice next to the woredas: the zone's annual targets (`GET /plans/zone`) against **what its woredas' cascaded monthly plans add up to**, month by month (a count is summed, a percentage is a rate and averaged; drafts are not counted — `utils/zoneMonthly.js`). A zone has no monthly plan of its own, so this can never disagree with the woredas; *Left* reaches zero once every woreda has cascaded its months. Below it, the zone's and every woreda's annual targets side by side (`ZoneTargetsTable`). It can be downloaded and printed like the other plan tables.
+
+Who sees what: the Zonal Expert and the admin get the *Annual Plan* and *Monthly Plan* tabs and edit as before. The zonal dept head, plan expert and team leader get the *Monthly Plan* tab **read-only** (no split / save / cascade buttons; a woreda with no monthly plan yet says so instead of suggesting one). Every call is scoped to the user's department (and team) as before; the old `GET /plans/overview` endpoint is gone.
+
+## Reviewer feedback — written, no score (migration 0010)
+`POST /feedback` / `GET /feedback` (table `review_feedback`, run `npm run migrate`). Four kinds: `woreda_report` (`report_id`; the report must be under review or approved), `woreda_plan` (`format_id`, `woreda_id`, `year`) and `zone_plan` (`format_id`, `year`, admin: `zone_id`) — written by the Zonal Expert and Team Leader of the format's team — and `department_report` and `department_plan` (the zone plan) (`year`, `period` = `m7` | `q1` | `h1` | `annual` …, admin: `department_id` + `zone_id`) — written by the Zonal Dept Head for the whole department's achievement. Woreda users can read the feedback on their own woreda's reports and plans. `POST /rankings/teams/score` was removed.
+Migration 0011 adds the `department_plan` kind; migration 0012 makes a report version unique per department, year and name (case and spaces ignored) — `POST /templates/versions` answers 409 for a repeat.

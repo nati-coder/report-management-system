@@ -1,8 +1,8 @@
 /** Reporting periods — client side. The plan year is the Ethiopian fiscal year, Hamle → Sene; month numbers are slots (Hamle = 7 … Sene = 6). All dates are Ethiopian (EC). */
 import { MONTH_NAMES, MONTH_NUMBERS } from './planSplit.js';
-import { formatEcDateTime, gregorianWall, fromGregorianWall } from './ethiopianDate.js';
+import { formatEcDateTime, gregorianWall, fromGregorianWall, currentFiscalYear, currentFiscalMonth } from './ethiopianDate.js';
 
-export { currentFiscalYear } from './ethiopianDate.js';
+export { currentFiscalYear, currentFiscalMonth };
 
 /** Reports are filed month by month for a monthly template and for an annual one (same rule as backend/src/utils/periods.js). */
 export const filedMonthly = (templateType) => templateType === 'monthly' || templateType === 'annual';
@@ -12,14 +12,39 @@ export const monthName = (n) => MONTH_NAMES[MONTH_NUMBERS.indexOf(Number(n))] ??
 export const MONTH_OPTIONS = MONTH_NAMES.map((label, i) => ({ value: MONTH_NUMBERS[i], label }));
 /** Quarterly, half-year and annual summaries are built from the monthly reports. */
 export const RANGE_OPTIONS = [
-  { value: 'q1', label: 'Quarter 1 (Hamle–Meskerem)' },
-  { value: 'q2', label: 'Quarter 2 (Tikimt–Tahsas)' },
-  { value: 'q3', label: 'Quarter 3 (Tir–Megabit)' },
-  { value: 'q4', label: 'Quarter 4 (Miazia–Sene)' },
-  { value: 'h1', label: 'Half year 1 (Hamle–Tahsas)' },
-  { value: 'h2', label: 'Half year 2 (Tir–Sene)' },
-  { value: 'annual', label: 'Annual (Hamle–Sene)' },
+  { value: 'q1', label: 'Quarter 1 (Hamle–Meskerem)', months: [7, 8, 9] },
+  { value: 'q2', label: 'Quarter 2 (Tikimt–Tahsas)', months: [10, 11, 12] },
+  { value: 'q3', label: 'Quarter 3 (Tir–Megabit)', months: [1, 2, 3] },
+  { value: 'q4', label: 'Quarter 4 (Miazia–Sene)', months: [4, 5, 6] },
+  { value: 'h1', label: 'Half year 1 (Hamle–Tahsas)', months: [7, 8, 9, 10, 11, 12] },
+  { value: 'h2', label: 'Half year 2 (Tir–Sene)', months: [1, 2, 3, 4, 5, 6] },
+  { value: 'annual', label: 'Annual (Hamle–Sene)', months: [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6] },
 ];
+
+/**
+ * The periods worth offering in a "which period?" list: never the future, and no further than the last month
+ * that has a submitted report.
+ *   - a past plan year: all twelve months; a future one: none; the current one: up to the current month;
+ *   - when reports exist (`reportedMonths`, month slots), the list stops at the latest reported month;
+ *   - a quarter / half year / annual summary is offered as soon as its first month is in the list, and is
+ *     marked "up to <month>" while it is only partly over (e.g. reports up to Tikimt: Hamle…Tikimt, Quarter 1,
+ *     Quarter 2 — up to Tikimt, Half year 1 — up to Tikimt, Annual — up to Tikimt).
+ * `now` is a parameter so it can be tested.
+ */
+export function availablePeriods({ year, reportedMonths = [], now = new Date() }) {
+  const order = MONTH_NUMBERS;
+  const nowYear = currentFiscalYear(now);
+  const y = Number(year);
+  let last = y > nowYear ? -1 : y < nowYear ? order.length - 1 : order.indexOf(currentFiscalMonth(now));
+  const reported = reportedMonths.map((m) => order.indexOf(Number(m))).filter((i) => i >= 0 && i <= last);
+  if (reported.length) last = Math.max(...reported);
+  const months = MONTH_OPTIONS.slice(0, last + 1);
+  const upTo = last >= 0 ? MONTH_OPTIONS[last].label : '';
+  const ranges = RANGE_OPTIONS
+    .filter((r) => order.indexOf(r.months[0]) <= last)
+    .map((r) => (order.indexOf(r.months[r.months.length - 1]) > last ? { ...r, label: `${r.label} — up to ${upTo}` } : r));
+  return { months, ranges, upTo };
+}
 
 /** "Tikimt 14, 2019 EC, 18:30" — Ethiopian date and Addis Ababa time. */
 export const fmtDateTime = (d) => (d ? formatEcDateTime(d) : '—');

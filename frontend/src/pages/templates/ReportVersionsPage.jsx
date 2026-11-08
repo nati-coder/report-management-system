@@ -34,11 +34,15 @@ export default function ReportVersionsPage() {
   const createVersion = async (e) => {
     e.preventDefault();
     if (!form.department_id) return notifyError('Choose a department');
+    const name = form.title.trim() ? `v${form.versionNumber} — ${form.title.trim()}` : `v${form.versionNumber}`;
+    if ((versions || []).some((v) => String(v.dep_id) === String(form.department_id) && Number(v.year) === Number(form.year) && v.name.trim().toLowerCase() === name.toLowerCase())) {
+      return notifyError(`"${name}" already exists for this department in ${form.year} — a version can only be used once per year.`);
+    }
     setSaving(true);
     try {
       await unwrap(api.post('/templates/versions', {
         // the title is optional: without one the version is just "v1.0"
-        name: form.title.trim() ? `v${form.versionNumber} — ${form.title.trim()}` : `v${form.versionNumber}`,
+        name,
         year: Number(form.year),
         dep_id: Number(form.department_id),
         nodes: [],

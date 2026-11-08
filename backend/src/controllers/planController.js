@@ -12,7 +12,6 @@ import { notifyMany } from '../services/notificationService.js';
 import { templateScope, woredaPlanScope, inScope, OUT_OF_SCOPE } from '../utils/scope.js';
 import { indicatorsOf } from '../utils/formatTree.js';
 import { hierarchyOf, hierarchyErrors, applySubitemSums, zoneTotalErrors, monthlyTotalErrors } from '../utils/planChecks.js';
-import { buildOverview } from '../utils/planOverview.js';
 import { MONTH_NAMES, PLAN_MONTHS, currentFiscalYear } from '../utils/periods.js';
 
 const num = (v) => (v ? Number(v) : undefined);
@@ -316,31 +315,3 @@ export const exportPlanTable = catchAsync(async (req, res) => {
   res.send(buf);
 });
 
-/** Zone plan overview: every team's report format with the zone plan and each woreda's plan beside it. */
-export const planOverview = catchAsync(async (req, res) => {
-  const u = req.user;
-  if (WOREDA_ROLES.includes(u.role)) throw ApiError.forbidden('The zone overview is not available to woreda users');
-  const zoneId = await zoneFor(u, req.query.zone_id);
-  const scope = templateScope(u);
-  if (!scope) return success(res, { zone_id: zoneId, year: null, years: [], woredas: [], teams: [] });
-
-  const approved = await ReportFormat.list({
-    status: 'approved',
-    ...(scope.all ? {} : { department_id: scope.department_id, team_id: scope.team_id }),
-  });
-  const years = [...new Set(approved.map((f) => f.version_year))].sort((a, b) => b - a);
-  const thisYear = currentFiscalYear();
-  const year = num(req.query.year) ?? (years.includes(thisYear) ? thisYear : years[0] ?? thisYear);
-
-  const formats = approved.filter((f) => f.version_year === year);
-  const [woredas, plans, zonePlans] = await Promise.all([
-    Zone.listWoredas(zoneId),
-    Plan.list({ zone_id: zoneId, year, annual: true }),
-    ZonePlan.listFor({ zone_id: zoneId, year }),
-  ]);
-  success(res, {
-    zone_id: zoneId, year, years,
-    woredas: woredas.map((w) => ({ woreda_id: w.woreda_id, name: w.name })),
-    teams: buildOverview({ formats, plans, zonePlans }),
-  });
-});

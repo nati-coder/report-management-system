@@ -16,6 +16,8 @@ export const validate = (schema, source = 'body') => (req, _res, next) => {
 
 const id = z.coerce.number().int().positive();
 
+const FEEDBACK_KINDS = ['woreda_report', 'woreda_plan', 'zone_plan', 'department_report', 'department_plan'];
+
 /** 8+ chars, at least one uppercase, one lowercase, and one special (non-alphanumeric) character. */
 const strongPassword = z.string()
   .min(8, 'Must be at least 8 characters')
@@ -257,11 +259,26 @@ export const schemas = {
     action: z.enum(['approve', 'reject']),
     feedback: z.string().max(2000).optional(),
   }),
-  teamScore: z.object({
-    report_id: id,
-    score: z.number().min(0),
-    max_score: z.number().positive().default(100),
-    feedback: z.string().max(2000).optional(),
+  feedbackQuery: z.object({
+    kind: z.enum(FEEDBACK_KINDS),
+    report_id: id.optional(),
+    format_id: id.optional(),
+    woreda_id: z.string().max(20).optional(),
+    zone_id: z.string().max(20).optional(),
+    department_id: id.optional(),
+    year: id.optional(),
+    period: z.string().max(12).optional(),
+  }),
+  feedback: z.object({
+    kind: z.enum(FEEDBACK_KINDS),
+    report_id: id.optional(),
+    format_id: id.optional(),
+    woreda_id: z.string().max(20).optional(),
+    zone_id: z.string().max(20).optional(),
+    department_id: id.optional(),
+    year: id.optional(),
+    period: z.string().max(12).optional(),
+    body: z.string().trim().min(1, 'Write your feedback').max(4000),
   }),
   computeRanking: z.object({
     woreda_id: z.string().max(20),

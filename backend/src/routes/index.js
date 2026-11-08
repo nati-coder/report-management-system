@@ -10,6 +10,7 @@ import referenceRoutes from './referenceRoutes.js';
 import reportFormatRoutes from './reportFormatRoutes.js';
 import planRoutes from './planRoutes.js';
 import reportWindowRoutes from './reportWindowRoutes.js';
+import feedbackRoutes from './feedbackRoutes.js';
 
 const router = Router();
 router.get('/health', (_req, res) => res.json({ success: true, status: 'ok', time: new Date().toISOString() }));
@@ -24,5 +25,6 @@ router.use('/reference', referenceRoutes);
 router.use('/report-formats', reportFormatRoutes);
 router.use('/plans', planRoutes);
 router.use('/report-windows', reportWindowRoutes);
+router.use('/feedback', feedbackRoutes);
 
 export default router;

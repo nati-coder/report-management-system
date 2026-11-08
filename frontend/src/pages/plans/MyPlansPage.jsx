@@ -6,6 +6,7 @@ import Badge from '../../components/common/Badge.jsx';
 import Button from '../../components/common/Button.jsx';
 import Modal from '../../components/common/Modal.jsx';
 import WoredaPlanView from '../../components/plans/WoredaPlanView.jsx';
+import FeedbackPanel from '../../components/feedback/FeedbackPanel.jsx';
 import useFetch from '../../hooks/useFetch.js';
 import useAuth from '../../hooks/useAuth.js';
 import * as planService from '../../services/planService.js';
@@ -134,6 +135,10 @@ export default function MyPlansPage() {
               )}
               {formatError ? <p className="text-sm text-red-600">Could not load this plan's report format: {formatError}</p> : !format ? <Loader /> : <WoredaPlanView format={format} data={plan.data} />}
             </Card>
+            <FeedbackPanel
+              className="mt-6" title="Feedback from the zone" role={user.role}
+              params={{ kind: 'woreda_plan', format_id: plan.format_id, year: plan.year, woreda_id: plan.woreda_id }}
+            />
             </div>
           )}
         </div>

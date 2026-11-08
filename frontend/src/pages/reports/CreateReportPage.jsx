@@ -24,7 +24,8 @@ export default function CreateReportPage() {
   // A monthly report can only be filed while the zone has that month open — between its opening time and deadline.
   const { data: windows, loading: windowsLoading } = useFetch(() => reportWindowService.list({ open: true }), []);
   const accepted = (plans || []).filter((p) => !p.month && !p.quarter);
-  const [form, setForm] = useState({ plan_id: '', title: '', month: '', quarter: '' });
+  const [form, setForm] = useState({ year: '', plan_id: '', title: '', month: '', quarter: '' });
+  const years = [...new Set(accepted.map((p) => String(p.year)))].sort((a, b) => Number(b) - Number(a));
   const [busy, setBusy] = useState(false);
   const plan = accepted.find((p) => String(p.id) === String(form.plan_id));
   const byMonth = ['monthly', 'annual'].includes(plan?.template_type); // an annual format is reported month by month
@@ -57,10 +58,16 @@ export default function CreateReportPage() {
           </p>
         ) : (
           <form onSubmit={submit} className="space-y-4">
-            <div><label className="label">Annual plan</label>
-              <select required className="input" value={form.plan_id} onChange={(e) => setForm({ ...form, plan_id: e.target.value })}>
-                <option value="">Select…</option>
-                {accepted.map((p) => <option key={p.id} value={p.id}>{p.template_title} — {p.team_name || 'no team'} · {p.year} ({p.template_type})</option>)}
+            <div><label className="label">Year</label>
+              <select required className="input" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value, plan_id: '', month: '', quarter: '' })}>
+                <option value="">Select year…</option>
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div><label className="label">Report version (annual plan)</label>
+              <select required className="input" value={form.plan_id} disabled={!form.year} onChange={(e) => setForm({ ...form, plan_id: e.target.value, month: '', quarter: '' })}>
+                <option value="">{form.year ? 'Select…' : 'Choose a year first'}</option>
+                {accepted.filter((p) => String(p.year) === String(form.year)).map((p) => <option key={p.id} value={p.id}>{p.version_name ? `${p.version_name} — ` : ''}{p.template_title} — {p.team_name || 'no team'} ({p.template_type})</option>)}
               </select>
             </div>
             <div><label className="label">Title</label><input required className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>

@@ -58,6 +58,14 @@ const Report = {
        WHERE r.format_id = $1 AND r.year = $2 AND r.month = $3 ${who}`, p);
     return rows;
   },
+  /** Month slots that have at least one submitted / in-review / approved report, for one or several formats. */
+  async reportedMonths({ format_ids, year, woredaIds, statuses }) {
+    const { rows } = await query(
+      `SELECT DISTINCT r.month FROM reports r
+       WHERE r.format_id = ANY($1) AND r.year = $2 AND r.woreda_id = ANY($3) AND r.month IS NOT NULL AND r.status = ANY($4)
+       ORDER BY r.month`, [format_ids, year, woredaIds, statuses]);
+    return rows.map((r) => r.month);
+  },
   /** Submitted reports (never drafts) of a monthly format over several months — the latest per woreda and month. */
   async sheetMonths({ format_id, year, months, woredaIds }) {
     const { rows } = await query(

@@ -5,7 +5,7 @@ import * as templateService from '../../services/templateService.js';
 import { errorMessage } from '../../services/api.js';
 import { useNotify } from '../../context/NotificationContext.jsx';
 
-const EMPTY = { mode: 'all', versionId: '', teamId: '', title: '' };
+const EMPTY = { mode: 'all', year: '', versionId: '', teamId: '', title: '' };
 
 /**
  * Zonal Plan Expert: create report templates. A team can have only ONE template per report version.
@@ -23,12 +23,15 @@ export default function CreateTemplateModal({ open, versions, teams, onClose, on
   useEffect(() => { if (open) setForm(EMPTY); }, [open]);
 
   const openVersions = useMemo(() => versions.filter((v) => !v.closed_at), [versions]);
-  const version = openVersions.find((v) => String(v.id) === String(form.versionId));
+  const years = useMemo(() => [...new Set(openVersions.map((v) => String(v.year)))].sort((a, b) => Number(b) - Number(a)), [openVersions]);
+  const versionsOfYear = useMemo(() => openVersions.filter((v) => String(v.year) === String(form.year)), [openVersions, form.year]);
+  const version = versionsOfYear.find((v) => String(v.id) === String(form.versionId));
   const versionTeams = version ? teams.filter((t) => t.department_id === version.dep_id) : [];
   const specific = form.mode === 'team';
   const ready = !!version && form.title.trim().length >= 2 && (!specific || !!form.teamId);
 
   const setMode = (mode) => setForm({ ...form, mode, teamId: '' });
+  const setYear = (year) => setForm({ ...form, year, versionId: '', teamId: '' });
   const setVersion = (versionId) => setForm({ ...form, versionId, teamId: '' });
 
   const submit = async (e) => {
@@ -64,10 +67,18 @@ export default function CreateTemplateModal({ open, versions, teams, onClose, on
         </fieldset>
 
         <div>
+          <label className="label">Year</label>
+          <select required className="input" value={form.year} onChange={(e) => setYear(e.target.value)}>
+            <option value="">Select year…</option>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+
+        <div>
           <label className="label">Report version</label>
-          <select required className="input" value={form.versionId} onChange={(e) => setVersion(e.target.value)}>
-            <option value="">Select…</option>
-            {openVersions.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.year}){v.approval_date ? '' : ' — draft'}</option>)}
+          <select required className="input" value={form.versionId} disabled={!form.year} onChange={(e) => setVersion(e.target.value)}>
+            <option value="">{form.year ? 'Select…' : 'Choose a year first'}</option>
+            {versionsOfYear.map((v) => <option key={v.id} value={v.id}>{v.name} ({v.year}){v.approval_date ? '' : ' — draft'}</option>)}
           </select>
           {!openVersions.length && <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">There is no open report version. Closed versions can't take new templates.</p>}
           {version && !specific && (

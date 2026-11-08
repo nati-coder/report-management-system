@@ -279,6 +279,30 @@ export const getPlan = catchAsync(async (req, res) => {
  * admin gets every woreda, or one zone when zone_id is given. For a single month the target is the woreda's
  * accepted annual plan, or that month's cascaded monthly plan when there is one. Drafts are never included.
  */
+/**
+ * Which months of a plan year have a submitted report, for one format (`format_id`) or several (`format_ids`, comma
+ * separated) — the sheet uses it to offer only periods that are not in the future and not beyond the last report.
+ */
+export const sheetMonths = catchAsync(async (req, res) => {
+  const u = req.user;
+  const year = Number(req.query.year);
+  const ids = [...new Set(String(req.query.format_ids ?? req.query.format_id ?? '').split(',').map(Number).filter(Boolean))].slice(0, 200);
+  if (!year || !ids.length) throw ApiError.badRequest('format_ids and year are required');
+  const scope = templateScope(u);
+  for (const id of ids) {
+    const format = await ReportFormat.findById(id);
+    if (!format) throw ApiError.notFound('Report format not found');
+    if (!inScope(scope, format)) throw ApiError.forbidden(OUT_OF_SCOPE);
+  }
+  let zone_id;
+  if (ZONAL_ROLES.includes(u.role)) {
+    if (!u.zone_id) return success(res, { months: [] });
+    zone_id = u.zone_id;
+  } else zone_id = req.query.zone_id || undefined;
+  const woredaIds = (await Zone.listWoredas(zone_id)).map((w) => w.woreda_id);
+  success(res, { months: await Report.reportedMonths({ format_ids: ids, year, woredaIds, statuses: COUNTED }) });
+});
+
 export const reportSheet = catchAsync(async (req, res) => {
   const u = req.user;
   const format_id = Number(req.query.format_id);

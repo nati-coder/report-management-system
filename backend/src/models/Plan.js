@@ -30,11 +30,12 @@ const Plan = {
     if (monthly) cond.push('p.month IS NOT NULL AND p.quarter IS NULL');
     const { rows } = await query(
       `SELECT p.*, w.name AS woreda_name, w.zone_id,
-              rf.version AS format_version, t.title AS template_title, t.type AS template_type, t.department_id, tm.name AS team_name
+              rf.version AS format_version, t.title AS template_title, t.type AS template_type, t.department_id, tm.name AS team_name, rv.name AS version_name
        FROM plans p
        JOIN woredas w ON w.woreda_id = p.woreda_id
        JOIN report_formats rf ON rf.id = p.format_id
        JOIN report_templates t ON t.id = rf.template_id
+       LEFT JOIN report_versions rv ON rv.id = t.version_id
        LEFT JOIN teams tm ON tm.id = p.team_id
        ${cond.length ? 'WHERE ' + cond.join(' AND ') : ''}
        ORDER BY p.year DESC, w.name, p.month`, p);

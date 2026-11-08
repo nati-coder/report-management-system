@@ -15,7 +15,7 @@ import * as referenceService from '../../services/referenceService.js';
 import { errorMessage } from '../../services/api.js';
 import { useNotify } from '../../context/NotificationContext.jsx';
 import { ROLES } from '../../utils/roleHelpers.js';
-import { MONTH_OPTIONS, monthName, fmtDateTime, toLocalInput, fromLocalInput, timeLeft, currentFiscalYear, filedMonthly } from '../../utils/periods.js';
+import { MONTH_OPTIONS, monthName, fmtDateTime, toLocalInput, fromLocalInput, timeLeft, filedMonthly } from '../../utils/periods.js';
 import EcDateTimeInput from '../../components/common/EcDateTimeInput.jsx';
 
 const STATE_TONE = { upcoming: 'gray', open: 'green', closed: 'red' };
@@ -39,8 +39,10 @@ export default function ReportPeriodsPage() {
   const { data: periods, loading, reload } = useFetch(() => reportWindowService.periods(isAdmin && zoneId ? { zone_id: zoneId } : {}), [zoneId]);
   const annual = (formats || []).filter((f) => filedMonthly(f.template_type)); // monthly and annual templates are both reported month by month
 
+  const formatYears = [...new Set(annual.map((f) => String(f.version_year)))].sort((a, b) => Number(b) - Number(a));
+
   const now = new Date();
-  const [form, setForm] = useState({ format_id: '', year: String(currentFiscalYear()), month: '', opens_at: toLocalInput(now), closes_at: toLocalInput(new Date(now.getTime() + 7 * 86400000)), zone_id: '' });
+  const [form, setForm] = useState({ format_id: '', year: '', month: '', opens_at: toLocalInput(now), closes_at: toLocalInput(new Date(now.getTime() + 7 * 86400000)), zone_id: '' });
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(null);       // key of the period whose woredas are shown
   const [detail, setDetail] = useState(null);
@@ -90,16 +92,19 @@ export default function ReportPeriodsPage() {
           ) : (
             <form onSubmit={openPeriod} className="space-y-3">
               <div className="grid gap-3 md:grid-cols-4">
-                <div className="md:col-span-2">
-                  <label className="label" htmlFor="rp-format">Report format</label>
-                  <select id="rp-format" className="input" value={form.format_id} onChange={(e) => chooseFormat(e.target.value)}>
-                    <option value="">All teams' monthly formats</option>
-                    {annual.map((f) => <option key={f.id} value={f.id}>{f.template_title} — {f.version_name} · {f.team_name} (v{f.version})</option>)}
-                  </select>
-                </div>
                 <div>
                   <label className="label" htmlFor="rp-year">Year</label>
-                  <input id="rp-year" type="number" required className="input" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value })} />
+                  <select id="rp-year" required className="input" value={form.year} onChange={(e) => setForm({ ...form, year: e.target.value, format_id: '' })}>
+                    <option value="">Select year…</option>
+                    {formatYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="label" htmlFor="rp-format">Report version</label>
+                  <select id="rp-format" className="input" value={form.format_id} disabled={!form.year} onChange={(e) => chooseFormat(e.target.value)}>
+                    <option value="">{form.year ? "All teams' monthly formats" : 'Choose a year first'}</option>
+                    {annual.filter((f) => String(f.version_year) === String(form.year)).map((f) => <option key={f.id} value={f.id}>{f.version_name} — {f.template_title} · {f.team_name} (v{f.version})</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="label" htmlFor="rp-month">Month</label>

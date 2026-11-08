@@ -11,6 +11,7 @@ router.use(authenticate);
 
 router.get('/', c.listReports);
 router.get('/sheet', authorize(...ZONAL_ROLES), c.reportSheet); // before /:id
+router.get('/sheet/months', authorize(...ZONAL_ROLES), c.sheetMonths);
 router.get('/plans/:id', c.getPlan);
 router.get('/:id', c.getReport);
 router.post('/', authorize(...WOREDA_ROLES), validate(schemas.report), audit('report.create', 'report'), c.createReport);

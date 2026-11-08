@@ -32,6 +32,7 @@ export default function TemplateBuilderPage() {
     () => templateService.versions(user.role === ROLES.ADMIN ? {} : { dep_id: user.department_id }), []);
 
   const [versionId, setVersionId] = useState(searchParams.get('version_id') || '');
+  const [versionYear, setVersionYear] = useState(''); // the year is chosen first, then a version of that year
   const [teamId, setTeamId] = useState('');
   const [existingTemplateId, setExistingTemplateId] = useState(id || null);
   const [checkingExisting, setCheckingExisting] = useState(false);
@@ -43,6 +44,9 @@ export default function TemplateBuilderPage() {
   const [saving, setSaving] = useState(false);
 
   const selectedVersion = useMemo(() => versions?.find((v) => String(v.id) === String(versionId)), [versions, versionId]);
+  // A version that is already chosen (from the URL, or an existing template) decides the year.
+  useEffect(() => { if (selectedVersion) setVersionYear(String(selectedVersion.year)); }, [selectedVersion?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const versionYears = useMemo(() => [...new Set((versions || []).filter((v) => !v.closed_at || String(v.id) === String(versionId)).map((v) => String(v.year)))].sort((a, b) => Number(b) - Number(a)), [versions, versionId]);
   const teamsForVersion = useMemo(
     () => (ref?.teams || []).filter((t) => !selectedVersion || t.department_id === selectedVersion.dep_id), [ref, selectedVersion]);
 
@@ -158,12 +162,19 @@ export default function TemplateBuilderPage() {
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="space-y-6">
           <Card title="Report version & team">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label">Year</label>
+                <select className="input" value={versionYear} disabled={!!id} onChange={(e) => { setVersionYear(e.target.value); setVersionId(''); }}>
+                  <option value="">Select year…</option>
+                  {versionYears.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
               <div>
                 <label className="label">Report version</label>
-                <select className="input" value={versionId} disabled={!!id} onChange={(e) => setVersionId(e.target.value)}>
-                  <option value="">Select…</option>
-                  {(versions || []).filter((v) => !v.closed_at || String(v.id) === String(versionId)).map((v) => <option key={v.id} value={v.id}>{v.name} ({v.year}){v.closed_at ? ' — closed' : v.approval_date ? '' : ' — draft'}</option>)}
+                <select className="input" value={versionId} disabled={!!id || !versionYear} onChange={(e) => setVersionId(e.target.value)}>
+                  <option value="">{versionYear ? 'Select…' : 'Choose a year first'}</option>
+                  {(versions || []).filter((v) => String(v.year) === String(versionYear) && (!v.closed_at || String(v.id) === String(versionId))).map((v) => <option key={v.id} value={v.id}>{v.name} ({v.year}){v.closed_at ? ' — closed' : v.approval_date ? '' : ' — draft'}</option>)}
                 </select>
                 {errors.versionId && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{errors.versionId}</p>}
               </div>

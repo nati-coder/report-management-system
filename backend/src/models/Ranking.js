@@ -1,13 +1,6 @@
 import { query, withTransaction } from '../../config/db.js';
 
 const Ranking = {
-  async addTeamFeedback(f, userId) {
-    const { rows } = await query(
-      `INSERT INTO team_feedback (report_id, team_id, scored_by, score, max_score, feedback)
-       SELECT $1, r.team_id, $2, $3, $4, $5 FROM reports r WHERE r.id = $1 RETURNING *`,
-      [f.report_id, userId, f.score, f.max_score ?? 100, f.feedback ?? null]);
-    return rows[0] || null;
-  },
   async replaceTeamRanking({ woreda_id, period_type, year, month, quarter }, ranked) {
     return withTransaction(async (c) => {
       await c.query(

@@ -75,3 +75,11 @@ export function currentFiscalYear(value = new Date()) {
   const p = ecParts(value);
   return p.month >= 11 ? p.year + 1 : p.year;
 }
+
+/** Plan-year month slot (Hamle = 7 … Sene = 6) for each Ethiopian month number (1 = Meskerem … 13 = Pagume). Pagume counts with Nehase. */
+const FISCAL_SLOT = { 11: 7, 12: 8, 13: 8, 1: 9, 2: 10, 3: 11, 4: 12, 5: 1, 6: 2, 7: 3, 8: 4, 9: 5, 10: 6 };
+
+/** The plan-year month slot a date falls in (e.g. 10 for any day of Tikimt). */
+export function currentFiscalMonth(value = new Date()) {
+  return FISCAL_SLOT[ecParts(value).month];
+}

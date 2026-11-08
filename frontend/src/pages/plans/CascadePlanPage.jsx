@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Card from '../../components/common/Card.jsx';
 import Loader from '../../components/common/Loader.jsx';
+import YearFormatSelect from '../../components/common/YearFormatSelect.jsx';
 import ZonePlanCard from '../../components/plans/ZonePlanCard.jsx';
 import WoredaPlanCard from '../../components/plans/WoredaPlanCard.jsx';
 import useFetch from '../../hooks/useFetch.js';
@@ -15,6 +16,7 @@ import { ROLES } from '../../utils/roleHelpers.js';
 import { indicatorsOf } from '../../utils/formatTree.js';
 import { hierarchyOf, hierarchyIssues, toNumbers, EPS } from '../../utils/planChecks.js';
 import { annualCascadeTable } from '../../utils/planTable.js';
+import FeedbackPanel from '../../components/feedback/FeedbackPanel.jsx';
 
 const asStrings = (data) => Object.fromEntries(Object.entries(data || {}).map(([k, v]) => [k, String(v)]));
 const sameNumbers = (a, b) => {
@@ -147,17 +149,10 @@ export default function AnnualPlanTab() {
           </p>
         ) : (
           <div className="grid gap-3 md:grid-cols-4">
-            <div className="md:col-span-2">
-              <label className="label">Approved format</label>
-              <select className="input" value={formatId} onChange={(e) => setFormatId(e.target.value)}>
-                <option value="">Select…</option>
-                {formats.map((f) => <option key={f.id} value={f.id}>{f.template_title} — {f.version_name} · {f.team_name} (v{f.version})</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="label">Plan year</label>
-              <input type="number" className="input" value={year} onChange={(e) => setYear(e.target.value)} />
-            </div>
+            <YearFormatSelect
+              formats={formats} year={year} setYear={setYear} formatId={formatId} setFormatId={setFormatId}
+              idPrefix="plan" versionLabel="Approved format (version)" yearLabel="Plan year"
+            />
             {isAdmin && (
               <div>
                 <label className="label">Zone</label>
@@ -184,6 +179,13 @@ export default function AnnualPlanTab() {
               cascadedCount={cascadedCount} serverIssues={zoneIssues}
             />
           </div>
+          {!!zonePlan && (
+            <FeedbackPanel
+              title="Feedback on the zone plan" role={user.role}
+              params={{ kind: 'zone_plan', format_id: Number(formatId), year: Number(year), zone_id: zoneId }}
+              hint="Feedback on the zone's plan for this team. There is no score."
+            />
+          )}
           {!zonePlan ? (
             <Card title="Step 2 — Woreda plans" className="print:hidden">
               <p className="text-sm text-slate-500 dark:text-slate-400">Save the zone plan first — woredas are planned against it.</p>
@@ -195,6 +197,13 @@ export default function AnnualPlanTab() {
               items={items} parents={parents} zoneData={zonePlan.data} woredas={woredas} plans={plans}
               woredaId={woredaId} setWoredaId={setWoredaId} values={woredaVals} setValues={setWoredaVals}
               onSave={saveWoreda} saving={savingWoreda} serverIssues={woredaIssues} table={table}
+            />
+          )}
+          {!!zonePlan && !!woredaId && (
+            <FeedbackPanel
+              title={`Feedback on ${woredas.find((w) => w.woreda_id === woredaId)?.name ?? 'the woreda'}'s plan`} role={user.role}
+              params={{ kind: 'woreda_plan', format_id: Number(formatId), year: Number(year), woreda_id: woredaId }}
+              hint="Feedback on this woreda's plan for this team. There is no score."
             />
           )}
         </div>

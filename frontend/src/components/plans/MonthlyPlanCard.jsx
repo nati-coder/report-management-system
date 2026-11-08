@@ -16,7 +16,7 @@ const STATUS = { draft: ['draft', 'gray'], submitted: ['cascaded', 'blue'], appr
  * parents are the sum of their sub-items in every month. Cascading is blocked while a check fails.
  */
 export default function MonthlyPlanCard({
-  woreda, items, parents, annualData, values, setValues, status, locked, onDivide, onSave, saving, serverIssues, blockers, table,
+  woreda, items, parents, annualData, values, setValues, status, locked, onDivide, onSave, saving, serverIssues, blockers, table, readOnly = false,
 }) {
   const annualItems = items.filter((it) => annualData[it.key] !== undefined);
   const computed = computedParents(parents, annualData);
@@ -50,27 +50,27 @@ export default function MonthlyPlanCard({
         <div className="flex items-center gap-2 text-sm font-medium">
           {woreda.name} {status && <Badge tone={STATUS[status][1]}>{STATUS[status][0]}</Badge>}
         </div>
-        <div className="flex flex-wrap gap-2">
+        {!readOnly && <div className="flex flex-wrap gap-2">
           <Button variant="secondary" disabled={locked} onClick={clearAll}>Clear months</Button>
           {parents.length > 0 && <Button variant="secondary" disabled={locked} onClick={recalc}>Calculate parent totals</Button>}
           <Button variant="secondary" disabled={locked} onClick={onDivide}>Divide evenly</Button>
           <Button variant="secondary" loading={saving} disabled={locked} onClick={() => onSave(false)}>Save draft</Button>
           <Button loading={saving} disabled={locked || blockers.length > 0} onClick={() => onSave(true)}>Cascade to {woreda.name}</Button>
-        </div>
+        </div>}
       </div>
 
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+      {!readOnly && <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
         <strong>Divide evenly</strong> fills every month from the annual plan (counts stay whole numbers, the first months take any extra; a percentage repeats its annual rate).
         Then change any month by hand — type, use the arrow keys / Enter to move between cells, or paste a block copied from Excel. The <em>Left</em> column shows what is still unplaced; the ÷ button re-splits a single item.
-      </p>
+      </p>}
 
       {serverIssues.length > 0 && (
         <ul className="mb-3 list-disc rounded-lg bg-red-50 p-3 pl-7 text-xs text-red-700 dark:bg-red-900/20 dark:text-red-300">
           {serverIssues.map((m) => <li key={m}>{m}</li>)}
         </ul>
       )}
-      {locked && <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">This monthly plan has been cascaded to {woreda.name}; it is locked.</p>}
-      {!locked && blockers.length > 0 && (
+      {locked && !readOnly && <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">This monthly plan has been cascaded to {woreda.name}; it is locked.</p>}
+      {!locked && !readOnly && blockers.length > 0 && (
         <ul className="mb-3 list-disc rounded-lg bg-amber-50 p-3 pl-7 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
           {blockers.map((m) => <li key={m}>{m}</li>)}
         </ul>
@@ -103,7 +103,7 @@ export default function MonthlyPlanCard({
                         <div className="font-medium">{it.label}</div>
                         <div className="text-xs text-slate-400 dark:text-slate-500">{it.measurement}{isComputed ? ' · sum of sub-items' : ''}</div>
                       </div>
-                      {!locked && !isComputed && (
+                      {!locked && !readOnly && !isComputed && (
                         <button type="button" title="Divide this item evenly" aria-label={`Divide ${it.label} evenly`}
                           className="rounded border border-slate-300 px-1.5 text-xs text-slate-500 hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-700 print:hidden"
                           onClick={() => splitRow(it)}>÷</button>
@@ -113,7 +113,7 @@ export default function MonthlyPlanCard({
                   <td className={`${D} font-medium`}>{fmt(annual)}{it.isPercent ? '%' : ''}</td>
                   {Array.from({ length: MONTHS }, (_, m) => (
                     <td key={m} className="border border-slate-300 p-0 dark:border-slate-600">
-                      <GridCell r={ri} c={m} label={`${it.label}, ${MONTH_NAMES[m]}`} disabled={locked || isComputed}
+                      <GridCell r={ri} c={m} label={`${it.label}, ${MONTH_NAMES[m]}`} disabled={locked || readOnly || isComputed}
                         value={values[it.key]?.[m] ?? ''} onChange={(v) => setCell(it.key, m, v)} />
                     </td>
                   ))}

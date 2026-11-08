@@ -6,7 +6,7 @@ import Button from '../../components/common/Button.jsx';
 import Loader from '../../components/common/Loader.jsx';
 import DynamicReportForm from '../../components/reports/DynamicReportForm.jsx';
 import ReportStatusBadge from '../../components/reports/ReportStatusBadge.jsx';
-import TeamScoringModal from '../../components/rankings/TeamScoringModal.jsx';
+import FeedbackPanel from '../../components/feedback/FeedbackPanel.jsx';
 import useFetch from '../../hooks/useFetch.js';
 import useAuth from '../../hooks/useAuth.js';
 import * as reportService from '../../services/reportService.js';
@@ -35,7 +35,6 @@ export default function ReportDetailsPage() {
   const { data: periods, loading: periodsLoading } = useFetch(
     () => (report?.format_id && report?.type === 'monthly' && report?.month ? reportWindowService.list({ format_id: report.format_id, year: report.year }) : Promise.resolve([])), [report?.id]);
   const [saving, setSaving] = useState(false);
-  const [scoring, setScoring] = useState(false);
 
   if (loading || !report || plansLoading || monthlyLoading || periodsLoading) return <Loader />;
   const plan = (plans || []).find((p) => p.woreda_id === report.woreda_id && !p.month && !p.quarter) || null;
@@ -108,9 +107,16 @@ export default function ReportDetailsPage() {
           <Button onClick={() => review('approve')}>Approve</Button>
           <Button variant="danger" onClick={() => review('reject')}>Reject</Button>
         </>}
-        {canReview && ['reviewing', 'approved'].includes(report.status) && <Button variant="secondary" onClick={() => setScoring(true)}>Score team</Button>}
       </div>
-      <TeamScoringModal open={scoring} report={report} onClose={() => setScoring(false)} />
+      {/* The zone expert and team leader of the report's team give feedback on this woreda's report once it is reviewed. */}
+      {(canReview || WOREDA_ROLES.includes(user.role)) && report.status !== 'draft' && (
+        <FeedbackPanel
+          className="mt-6" title="Feedback on this report" role={user.role}
+          params={{ kind: 'woreda_report', report_id: report.id }}
+          writable={['reviewing', 'approved'].includes(report.status)}
+          hint="Written feedback for this team in this woreda — there is no score. It can be added once the report is under review."
+        />
+      )}
     </>
   );
 }

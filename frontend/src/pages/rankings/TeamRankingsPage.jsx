@@ -31,7 +31,7 @@ export default function TeamRankingsPage() {
 
   return (
     <>
-      <Header title="Team rankings" subtitle="Timeliness 40% · Accuracy 30% · Quality 30%" actions={canCompute && <Button onClick={compute} disabled={!f.woreda_id}>Recompute</Button>} />
+      <Header title="Team rankings" subtitle="Timeliness 40% · Accuracy 30% · Quality 30% (feedback is written, not scored — until a team has a quality score, timeliness and accuracy share its weight)" actions={canCompute && <Button onClick={compute} disabled={!f.woreda_id}>Recompute</Button>} />
       <div className="mb-4 flex flex-wrap gap-3">
         {!user.woreda_id && (
           <select className="input w-56" value={f.woreda_id} onChange={(e) => setF({ ...f, woreda_id: e.target.value })}>

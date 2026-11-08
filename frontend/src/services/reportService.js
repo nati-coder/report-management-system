@@ -11,3 +11,5 @@ export const remove = (id) => unwrap(api.delete(`/reports/${id}`));
 export const importExcel = (formData) => unwrap(api.post('/imports', formData));
 /** Zone level users and the admin: every woreda's plan + report for one format and period, on one sheet. */
 export const sheet = (params) => unwrap(api.get('/reports/sheet', { params }));
+/** Months (slots) of a year that have a submitted report for these formats: { months: [7, 8, 9, 10] }. Pass format_ids as a comma-separated string. */
+export const sheetMonths = (params) => unwrap(api.get('/reports/sheet/months', { params }));

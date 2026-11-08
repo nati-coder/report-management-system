@@ -150,6 +150,9 @@ export const createVersion = catchAsync(async (req, res) => {
   deptGuard(req.user, req.body.dep_id);
   // the title is optional: without one the version is named after its year
   const name = req.body.name || `Report version ${req.body.year}`;
+  if (await Template.findVersionByName(req.body.dep_id, req.body.year, name)) {
+    throw ApiError.conflict(`The report version "${name}" already exists for this department in ${req.body.year} — a version can only be used once per year. Use a different version number or title.`);
+  }
   let v;
   try { v = await Template.createVersion({ ...req.body, name }, req.user.id); } catch (e) {
     if (e.code === '23505') throw ApiError.conflict(`A report version named "${name}" already exists for this department and year — give this one a different title or version number.`);

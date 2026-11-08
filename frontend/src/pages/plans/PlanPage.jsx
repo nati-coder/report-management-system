@@ -1,17 +1,26 @@
 import { useSearchParams } from 'react-router-dom';
 import Header from '../../components/layout/Header.jsx';
+import useAuth from '../../hooks/useAuth.js';
+import { ROLES } from '../../utils/roleHelpers.js';
 import AnnualPlanTab from './CascadePlanPage.jsx';
 import MonthlyPlanTab from './MonthlyPlanTab.jsx';
 
-const TABS = [
+const ALL_TABS = [
   { key: 'annual', label: 'Annual Plan' },
   { key: 'monthly', label: 'Monthly Plan' },
 ];
 
-/** Zonal Expert: Plan. Two tabs — Annual Plan (zone plan + woreda cascade) and Monthly Plan (each woreda's annual plan divided across the months). */
+/**
+ * Plan. Two tabs for the Zonal Expert (and the admin) — Annual Plan (zone plan + woreda cascade) and Monthly Plan (the zone's
+ * plan, and each woreda's annual plan divided across the months). The Zonal Dept Head, Plan Expert and Team Leader only
+ * look: they get the Monthly Plan tab, read-only.
+ */
 export default function PlanPage() {
+  const { user } = useAuth();
+  const canEdit = user.role === ROLES.ADMIN || user.role === ROLES.ZONAL_EXPERT;
+  const TABS = canEdit ? ALL_TABS : ALL_TABS.filter((t) => t.key === 'monthly');
   const [searchParams, setSearchParams] = useSearchParams();
-  const active = TABS.some((t) => t.key === searchParams.get('tab')) ? searchParams.get('tab') : 'annual';
+  const active = TABS.some((t) => t.key === searchParams.get('tab')) ? searchParams.get('tab') : TABS[0].key;
 
   const selectTab = (key) => setSearchParams((prev) => {
     const next = new URLSearchParams(prev);
@@ -38,7 +47,7 @@ export default function PlanPage() {
       </div>
 
       {/* Annual Plan stays mounted (just hidden) so its selections aren't lost when switching tabs. */}
-      <div role="tabpanel" hidden={active !== 'annual'}><AnnualPlanTab /></div>
+      {canEdit && <div role="tabpanel" hidden={active !== 'annual'}><AnnualPlanTab /></div>}
       {active === 'monthly' && <div role="tabpanel"><MonthlyPlanTab /></div>}
     </>
   );

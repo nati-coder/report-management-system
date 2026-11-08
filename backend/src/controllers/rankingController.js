@@ -1,21 +1,9 @@
 import Ranking from '../models/Ranking.js';
-import Report from '../models/Report.js';
 import catchAsync from '../utils/catchAsync.js';
-import { success, created, ApiError } from '../utils/apiResponse.js';
+import { success, ApiError } from '../utils/apiResponse.js';
 import { canAccessWoreda } from '../middlewares/rbacMiddleware.js';
-import { assertReportAccess } from '../utils/reportAccess.js';
 import { computeTeamRanking } from '../services/rankingEngineService.js';
 import { ROLES } from '../constants/roles.js';
-
-export const scoreReport = catchAsync(async (req, res) => {
-  const report = await Report.findById(req.body.report_id);
-  if (!report) throw ApiError.notFound('Report not found');
-  // same rule as reading the report: right woreda, right department / team, and not one still inside the woreda
-  await assertReportAccess(req.user, report);
-  if (req.body.score > req.body.max_score) throw ApiError.badRequest('score cannot exceed max_score');
-  const fb = await Ranking.addTeamFeedback(req.body, req.user.id);
-  created(res, fb, 'Score recorded');
-});
 
 export const computeTeamRankings = catchAsync(async (req, res) => {
   if (!(await canAccessWoreda(req.user, req.body.woreda_id))) throw ApiError.forbidden('Outside your administrative scope');

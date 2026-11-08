@@ -10,7 +10,6 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/teams', c.getTeamRankings);
-router.post('/teams/score', authorize(...REVIEWER_ROLES), validate(schemas.teamScore), audit('team_feedback.create', 'report'), c.scoreReport);
 router.post('/teams/compute', authorize(...REVIEWER_ROLES), validate(schemas.computeRanking), audit('team_ranking.compute', 'team_ranking'), c.computeTeamRankings);
 
 router.get('/woredas', c.getWoredaRankings);

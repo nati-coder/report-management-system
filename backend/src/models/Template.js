@@ -91,6 +91,12 @@ const Template = {
     }
     return { ...version, nodes: roots };
   },
+  /** A version of this department in this year with the same name (ignoring case and surrounding spaces), if any. */
+  async findVersionByName(depId, year, name) {
+    const { rows } = await query('SELECT * FROM report_versions WHERE dep_id=$1 AND year=$2 AND lower(btrim(name)) = lower(btrim($3))', [depId, year, name]);
+    return rows[0] || null;
+  },
+
   /** Creates a report_versions row and inserts legacy report_format_nodes, resolving parent_code -> parent id (per team). */
   async createVersion(v, userId) {
     return withTransaction(async (c) => {

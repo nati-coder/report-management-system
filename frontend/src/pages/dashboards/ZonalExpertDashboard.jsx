@@ -8,7 +8,7 @@ export default function ZonalExpertDashboard() {
       { to: '/plans/cascade', label: 'Cascade annual plan' },
       { to: '/reports', label: 'Woreda reports' },
       { to: '/reports/sheet', label: 'All woredas & summaries' },
-      { to: '/rankings/teams', label: 'Score teams' },
+      { to: '/rankings/teams', label: 'Team rankings' },
       { to: '/support', label: 'My support tasks' },
     ]} />
   );
