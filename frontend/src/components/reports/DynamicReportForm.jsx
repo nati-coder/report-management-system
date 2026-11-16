@@ -126,7 +126,7 @@ export default function DynamicReportForm({ schema, plan = null, target = null, 
               {rows.map(({ n, d, input }) => {
                 const label = (
                   <td className={D} style={{ paddingLeft: 8 + Math.min(d, 8) * 18 }}>
-                    <span className="mr-2 font-mono text-xs text-slate-500 dark:text-slate-400">{n.code}.</span>
+                    {!n.row && <span className="mr-2 font-mono text-xs text-slate-500 dark:text-slate-400">{n.code}.</span>}
                     <span className={n.measurement ? '' : 'font-semibold text-slate-800 dark:text-slate-100'}>{n.title}</span>
                   </td>
                 );

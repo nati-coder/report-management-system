@@ -12,7 +12,7 @@
  *
  * (A frontend copy of the hierarchy helpers lives in frontend/src/utils/planChecks.js — keep them in step.)
  */
-import { summableSubitems } from './formatTree.js';
+import { summableSubitems, sumSources, chosenSumBlocker, nodesByCode, labelsByCode } from './formatTree.js';
 
 export const EPS = 0.005; // tolerance for decimals typed by hand
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -26,30 +26,60 @@ const fmt = (n) => String(round(n));
 export function hierarchyOf(schema) {
   const parents = [];
   if (!Array.isArray(schema?.nodes)) return parents; // older section/KPI formats have no hierarchy
+  const byCode = nodesByCode(schema.nodes);
+  const labels = labelsByCode(schema.nodes);
   const stack = [...schema.nodes];
   while (stack.length) {
     const n = stack.pop();
     for (const c of n.children || []) stack.push(c);
     if (n.sum_of_subitems === false) continue;
-    const found = summableSubitems(n); // null for headings, percentages, no sub-items or mixed measurements
+    let found;
+    if (n.sum_of_subitems === true && Array.isArray(n.sum_of) && n.sum_of.length) {
+      // chosen items (e.g. "Total male" = male of each branch) instead of the sub-items
+      const chosen = sumSources(n, byCode);
+      found = chosen && !chosenSumBlocker(n, chosen) ? chosen : null;
+    } else {
+      found = summableSubitems(n); // null for headings, percentages, no sub-items or mixed measurements
+    }
     if (!found) continue;
     parents.push({
-      key: n.code, label: `${n.code}. ${n.title}`, measurement: n.measurement,
-      children: found.map((c) => ({ key: c.code, label: `${c.code}. ${c.title}` })),
+      key: n.code, label: labels.get(String(n.code)), measurement: n.measurement,
+      children: found.map((c) => ({ key: c.code, label: labels.get(String(c.code)) })),
     });
   }
   return parents;
 }
 
-const depthOf = (key) => key.split('.').length;
+/**
+ * The parents in calculation order: every parent comes after the parents among its own sub-items, so a sum of sums works
+ * whatever the sums are made of (an item can sum items from other branches). Iterative; a loop (which a saved format
+ * cannot have) is left in the order found instead of hanging.
+ */
+export function orderParents(parents) {
+  const byKey = new Map(parents.map((p) => [p.key, p]));
+  const out = []; const state = new Map();
+  for (const root of parents) {
+    if (state.has(root.key)) continue;
+    const stack = [{ p: root, i: 0 }];
+    state.set(root.key, 1);
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      const next = top.p.children.map((c) => byKey.get(c.key)).filter(Boolean)[top.i];
+      if (next === undefined) { state.set(top.p.key, 2); out.push(top.p); stack.pop(); continue; }
+      top.i += 1;
+      if (!state.has(next.key)) { state.set(next.key, 1); stack.push({ p: next, i: 0 }); }
+    }
+  }
+  return out;
+}
 
 /**
  * The server's own calculation of the sums: returns a copy of `data` where every sum item that has a value in at least one
- * of its sub-items equals their total — whatever the client sent for it. Deepest items first, so a sum of sums works.
+ * of its sub-items equals their total — whatever the client sent for it. Sub-sums first (see orderParents), so a sum of sums works.
  */
 export function applySubitemSums(parents, data) {
   const out = { ...data };
-  for (const p of [...parents].sort((a, b) => depthOf(b.key) - depthOf(a.key))) {
+  for (const p of orderParents(parents)) {
     const vals = p.children.map((c) => num(out[c.key]));
     if (vals.every((v) => v === null)) continue;
     out[p.key] = round(vals.reduce((s, v) => s + (v ?? 0), 0));

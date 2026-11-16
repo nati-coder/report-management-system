@@ -28,6 +28,7 @@ import ReportSheetPage from './pages/reports/ReportSheetPage.jsx';
 import ReportPeriodsPage from './pages/reports/ReportPeriodsPage.jsx';
 import TeamRankingsPage from './pages/rankings/TeamRankingsPage.jsx';
 import WoredaRankingsPage from './pages/rankings/WoredaRankingsPage.jsx';
+import RankPage from './pages/rankings/RankPage.jsx';
 import UserListPage from './pages/users/UserListPage.jsx';
 import LocationsPage from './pages/admin/LocationsPage.jsx';
 import SupportListPage from './pages/support/SupportListPage.jsx';
@@ -105,6 +106,7 @@ export default function App() {
           </Route>
           <Route path="/reports/:id" element={<ReportDetailsPage />} />
 
+          <Route path="/rank" element={<RankPage />} />
           <Route path="/rankings/teams" element={<TeamRankingsPage />} />
           <Route path="/rankings/woredas" element={<WoredaRankingsPage />} />
 

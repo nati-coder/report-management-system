@@ -55,7 +55,7 @@ export default function FormatTableCard({ format, onDownload, downloading = '' }
             <tbody>
               {rows.map((r) => (
                 <tr key={r.code} className={r.measurement ? '' : 'bg-slate-50 font-semibold dark:bg-slate-900/40'}>
-                  <td className="border border-slate-300 px-3 py-2 align-top font-mono text-xs dark:border-slate-600">{r.code}.</td>
+                  <td className="border border-slate-300 px-3 py-2 align-top font-mono text-xs dark:border-slate-600">{r.num}</td>
                   <td className="border border-slate-300 py-2 pr-3 align-top dark:border-slate-600" style={{ paddingLeft: 12 + Math.min(r.depth, 10) * 20 }}>{r.title}</td>
                   <td className="border border-slate-300 px-3 py-2 align-top dark:border-slate-600">{r.measurement}</td>
                 </tr>

@@ -4,12 +4,11 @@
  *  - ZONE TOTALS: woreda targets add up to the zone plan (never above it; exactly, once every woreda is planned).
  * The server enforces both; these helpers show the same checks live while the expert types.
  */
-import { summableSubitems } from './formatTree.js';
+import { summableSubitems, sumSources, chosenSumBlocker, nodesByCode, labelsByCode } from './formatTree.js';
 
 export const EPS = 0.005;
 export const round = (n) => Math.round(n * 100) / 100;
 export const fmt = (n) => (Number.isFinite(n) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(round(n)) : '—');
-const depthOf = (key) => key.split('.').length;
 
 /** { key: '12' } typed strings -> { key: 12 } numbers (blank / non-numeric values dropped). */
 export function toNumbers(values) {
@@ -30,16 +29,43 @@ export function toNumbers(values) {
 export function hierarchyOf(schema) {
   const parents = [];
   if (!Array.isArray(schema?.nodes)) return parents;
+  const byCode = nodesByCode(schema.nodes);
+  const labels = labelsByCode(schema.nodes);
   const stack = [...schema.nodes];
   while (stack.length) {
     const n = stack.pop();
     for (const c of n.children || []) stack.push(c);
     if (n.sum_of_subitems === false) continue;
-    const found = summableSubitems(n);
+    let found;
+    if (n.sum_of_subitems === true && Array.isArray(n.sum_of) && n.sum_of.length) {
+      const chosen = sumSources(n, byCode); // the items it lists (e.g. "Total male" = male of each branch)
+      found = chosen && !chosenSumBlocker(n, chosen) ? chosen : null;
+    } else {
+      found = summableSubitems(n);
+    }
     if (!found) continue;
-    parents.push({ key: n.code, label: `${n.code}. ${n.title}`, children: found.map((c) => ({ key: c.code, label: `${c.code}. ${c.title}` })) });
+    parents.push({ key: n.code, label: labels.get(String(n.code)), children: found.map((c) => ({ key: c.code, label: labels.get(String(c.code)) })) });
   }
   return parents;
+}
+
+/** Parents in calculation order: each comes after the parents among its own sub-items (same as the server's orderParents). */
+export function orderParents(parents) {
+  const byKey = new Map(parents.map((p) => [p.key, p]));
+  const out = []; const state = new Map();
+  for (const root of parents) {
+    if (state.has(root.key)) continue;
+    const stack = [{ p: root, i: 0 }];
+    state.set(root.key, 1);
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      const next = top.p.children.map((c) => byKey.get(c.key)).filter(Boolean)[top.i];
+      if (next === undefined) { state.set(top.p.key, 2); out.push(top.p); stack.pop(); continue; }
+      top.i += 1;
+      if (!state.has(next.key)) { state.set(next.key, 1); stack.push({ p: next, i: 0 }); }
+    }
+  }
+  return out;
 }
 
 /** { parentKey: message } for every parent that is not the sum of its sub-items (nums = numbers by key). */
@@ -60,7 +86,7 @@ export function hierarchyIssues(parents, nums) {
 export function calcParents(parents, values) {
   const out = { ...values };
   const nums = toNumbers(out);
-  const ordered = [...parents].sort((a, b) => depthOf(b.key) - depthOf(a.key));
+  const ordered = orderParents(parents);
   for (const p of ordered) {
     if (p.children.every((c) => nums[c.key] === undefined)) continue;
     const sum = round(p.children.reduce((s, c) => s + (nums[c.key] ?? 0), 0));

@@ -32,7 +32,7 @@ export default function WoredaPlanView({ format, data = {} }) {
             const v = data[r.code];
             return (
               <tr key={r.code} className={heading ? 'bg-slate-50 font-semibold dark:bg-slate-900/40' : ''}>
-                {outline && <td className="px-3 py-2 align-top font-mono text-xs">{r.code}.</td>}
+                {outline && <td className="px-3 py-2 align-top font-mono text-xs">{r.num ?? `${r.code}.`}</td>}
                 <td className="py-2 pr-3 align-top" style={{ paddingLeft: 12 + Math.min(r.depth, 10) * 20 }}>{r.title}</td>
                 <td className="px-3 py-2 align-top text-slate-500 dark:text-slate-400">{r.measurement}</td>
                 <td className="px-3 py-2 text-right align-top font-medium tabular-nums">

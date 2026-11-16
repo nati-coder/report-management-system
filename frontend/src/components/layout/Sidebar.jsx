@@ -19,8 +19,7 @@ export default function Sidebar() {
     ...(canFormats ? [{ to: '/report-formats', label: 'Report Formats' }] : []),
     ...(canPlans ? [{ to: '/plans/cascade', label: 'Plan' }] : []),
     ...(isWoredaUser(user) ? [{ to: '/plans', label: 'Annual Plans' }] : []),
-    { to: '/rankings/teams', label: `${t('rankings')} · Teams` },
-    { to: '/rankings/woredas', label: `${t('rankings')} · Woredas` },
+    { to: '/rank', label: 'Rank' },
     { to: '/support', label: t('support') },
   ];
   return (

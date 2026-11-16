@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 
 /**
  * Export of an approved report format as CSV or Excel.
- * Columns: No. | Title | Measurement. The number is written with a trailing dot (1. / 1.1. / 1.1.10.) —
+ * Columns: No. | Title | Measurement. A split row (Male / Female) has no number: it sits, indented, under its item. The number is written with a trailing dot (1. / 1.1. / 1.1.10.) —
  * that is how the outline is numbered on screen, and it also stops Excel from reading "1.10" as the
  * number 1.1 (which would make 1.10 indistinguishable from 1.1).
  */
@@ -26,7 +26,7 @@ const csvCell = (v) => {
 
 /** UTF-8 with a BOM so Excel shows Amharic (and any non-ASCII) text correctly. */
 export function buildCsv(rows) {
-  const lines = [HEADERS, ...rows.map((r) => [`${r.code}.`, r.title, r.measurement])].map((l) => l.map(csvCell).join(','));
+  const lines = [HEADERS, ...rows.map((r) => [r.num ?? `${r.code}.`, r.title, r.measurement])].map((l) => l.map(csvCell).join(','));
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
@@ -62,7 +62,7 @@ export async function buildXlsx(format, rows) {
 
   rows.forEach((r, i) => {
     const row = ws.getRow(HEADER_ROW + 1 + i);
-    row.values = [`${r.code}.`, r.title, r.measurement]; // strings, so Excel never reinterprets "1.10." as a number
+    row.values = [r.num ?? `${r.code}.`, r.title, r.measurement]; // strings, so Excel never reinterprets "1.10." as a number
     const heading = !r.measurement;
     row.eachCell((c, col) => {
       c.border = border;
