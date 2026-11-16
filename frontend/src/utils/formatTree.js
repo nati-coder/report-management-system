@@ -56,10 +56,9 @@ export function measuredSubitems(node) {
   return found;
 }
 
-/** Why `node` cannot be a sum of its sub-items, or null when it can. */
+/** Why `node` cannot be a sum of its sub-items, or null when it can. A percentage can be one: it is then the average of its sub-items. */
 export function sumBlocker(node) {
   if (!measured(node)) return 'a heading has no value of its own, so it cannot be a sum';
-  if (isPercent(node.measurement)) return 'a percentage is a rate, not a sum';
   const subs = measuredSubitems(node);
   if (!subs.length) return 'it needs at least one sub-item with a measurement to sum';
   if (!subs.every((c) => sameMeasurement(c.measurement, node.measurement))) return `its sub-items must all use the same measurement (${node.measurement.trim()}) to be summed`;
@@ -72,7 +71,6 @@ export const summableSubitems = (node) => (sumBlocker(node) ? null : measuredSub
 /** Why `node` cannot be the sum of the `sources` chosen for it, or null when it can (mirrors the server). */
 export function chosenSumBlocker(node, sources) {
   if (!measured(node)) return 'a heading has no value of its own, so it cannot be a sum';
-  if (isPercent(node.measurement)) return 'a percentage is a rate, not a sum';
   if (!sources?.length) return 'choose at least one item to sum';
   if (sources.includes(node)) return 'an item cannot be the sum of itself';
   if (!sources.every((c) => measured(c) && sameMeasurement(c.measurement, node.measurement))) return `the items it sums must all use the same measurement (${node.measurement.trim()})`;
@@ -365,7 +363,7 @@ export function schemaToTree(schema) {
     const build = (list) => list.map((n) => {
       const node = newNode({
         title: n.title || '', measurement: n.measurement || '', row: n.row === true,
-        sum_of_subitems: typeof n.sum_of_subitems === 'boolean' ? n.sum_of_subitems : summableSubitems(n) !== null,
+        sum_of_subitems: typeof n.sum_of_subitems === 'boolean' ? n.sum_of_subitems : (summableSubitems(n) !== null && !isPercent(n.measurement)), // a format saved before the flag: a percentage was never a sum
         children: build(n.children || []),
       });
       if (Array.isArray(n.sum_of) && n.sum_of.length) pending.push({ node, codes: n.sum_of });

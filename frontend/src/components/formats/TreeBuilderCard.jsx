@@ -63,7 +63,7 @@ export default function TreeBuilderCard({ nodes, setNodes, errors = {}, readOnly
         <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
           Lay the report out as it is on paper: items nest without limit (1. → 1.1. → 1.1.1. …). The <strong>measurement</strong> is the unit a value is
           reported in (e.g. %, Number, ETB). Leave it blank for a heading that has no value of its own. <strong>Is sum of sub-items?</strong> — choose Yes and the item's value is
-          calculated automatically from its sub-items (they must use the same measurement; a percentage can't be a sum); choose No to enter it by hand.
+          calculated automatically from its sub-items (they must use the same measurement; for a <strong>%</strong> item the value is the <em>average</em> of its sub-items, not their total); choose No to enter it by hand.
           A sum normally adds up its own sub-items; open <strong>Calculated from</strong> to make it add up other items instead — for example <em>Total male</em> = the male item of each branch (they can be anywhere in the format and must use the same measurement).
           On a Male / Female row, choosing Yes gives every sub-item the same row automatically (same name and measurement) and adds them up — including sub-items you add later. Press Enter in a title to add the next item.
         </p>
@@ -76,7 +76,8 @@ export default function TreeBuilderCard({ nodes, setNodes, errors = {}, readOnly
       <div className="space-y-1">
         {rows.map(({ node, path, code, num, depth }) => {
           const hasUnit = !!node.measurement?.trim();
-          const canSum = hasUnit && !isPercent(node.measurement);
+          const canSum = hasUnit;
+          const pct = isPercent(node.measurement);
           const chosen = chosenSources(node, byId);
           const blocker = hasUnit ? sumBlocker(node) : 'a heading has no value of its own, so it cannot be a sum';
           const candidates = canSum ? rows.filter((r) => r.node._id !== node._id && r.node.measurement?.trim() && sameUnit(r.node.measurement, node.measurement)) : [];
@@ -103,7 +104,7 @@ export default function TreeBuilderCard({ nodes, setNodes, errors = {}, readOnly
                     <span className="whitespace-nowrap">Sum of sub-items?</span>
                     <select
                       className="input w-20 py-1" aria-label={`Is item ${code} the sum of its sub-items?`}
-                      title={!canSum ? `Not available: ${blocker}` : 'Yes: calculated from its sub-items (or the items you choose). No: entered by hand.'}
+                      title={!canSum ? `Not available: ${blocker}` : (pct ? 'Yes: the average of its sub-items (or of the items you choose). No: entered by hand.' : 'Yes: calculated from its sub-items (or the items you choose). No: entered by hand.')}
                       value={node.sum_of_subitems ? 'yes' : 'no'}
                       onChange={(e) => setNodes((n) => syncSplits(updateNode(n, path, { sum_of_subitems: e.target.value === 'yes' })))}
                     >
@@ -128,11 +129,11 @@ export default function TreeBuilderCard({ nodes, setNodes, errors = {}, readOnly
               {!readOnly && node.sum_of_subitems && canSum && (
                 <details className="ml-24 mt-1 text-xs">
                   <summary className="cursor-pointer text-slate-600 dark:text-slate-300">
-                    Calculated from: {chosen.length ? chosen.map((c) => nameOfId.get(c._id)).join(', ') : (node.children.some((c) => c.row) ? 'its rows' : 'its sub-items')}
+                    {pct ? 'Averaged from' : 'Calculated from'}: {chosen.length ? chosen.map((c) => nameOfId.get(c._id)).join(', ') : (node.children.some((c) => c.row) ? 'its rows' : 'its sub-items')}
                   </summary>
                   <div className="mt-1 max-h-56 space-y-1 overflow-y-auto rounded border border-slate-200 p-2 dark:border-slate-700">
                     <p className="text-slate-500 dark:text-slate-400">
-                      Tick the items this one adds up. Leave all unticked to add up its own sub-items.
+                      {pct ? 'Tick the items this one averages.' : 'Tick the items this one adds up.'} Leave all unticked to use its own sub-items.
                     </p>
                     {candidates.map((cand) => { const c = cand.node; return (
                       <label key={c._id} className="flex items-center gap-2">

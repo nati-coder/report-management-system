@@ -1,14 +1,26 @@
 /**
  * Annual-plan consistency helpers — client side. Mirrors backend/src/utils/planChecks.js:
- *  - HIERARCHY: an item marked "Is sum of sub-items? Yes" equals the sum of its sub-items (same measurement, never for %).
+ *  - HIERARCHY: an item marked "Is sum of sub-items? Yes" equals the sum of its sub-items (same measurement). A percentage is the
+ *    AVERAGE of its sub-items instead (SUM / COUNT of the ones that have a value, as in the ranking).
  *  - ZONE TOTALS: woreda targets add up to the zone plan (never above it; exactly, once every woreda is planned).
  * The server enforces both; these helpers show the same checks live while the expert types.
  */
-import { summableSubitems, sumSources, chosenSumBlocker, nodesByCode, labelsByCode } from './formatTree.js';
+import { summableSubitems, sumSources, chosenSumBlocker, nodesByCode, labelsByCode, isPercent } from './formatTree.js';
 
 export const EPS = 0.005;
 export const round = (n) => Math.round(n * 100) / 100;
 export const fmt = (n) => (Number.isFinite(n) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(round(n)) : '—');
+
+/**
+ * What a parent is worth from its sub-items' numbers (undefined = no value): a count adds them up, a percentage is the average of the
+ * ones that have a value (75+75 -> 75, 50+100 -> 75, 50+70 -> 60). Mirrors the server's combine().
+ */
+export function combine(parent, vals) {
+  const present = vals.filter((v) => v !== null && v !== undefined);
+  if (!present.length) return undefined;
+  const total = present.reduce((s, v) => s + v, 0);
+  return round(parent.percent ? total / present.length : total);
+}
 
 /** { key: '12' } typed strings -> { key: 12 } numbers (blank / non-numeric values dropped). */
 export function toNumbers(values) {
@@ -36,6 +48,7 @@ export function hierarchyOf(schema) {
     const n = stack.pop();
     for (const c of n.children || []) stack.push(c);
     if (n.sum_of_subitems === false) continue;
+    if (n.sum_of_subitems !== true && isPercent(n.measurement)) continue; // an old format without the flag: a percentage was never a sum
     let found;
     if (n.sum_of_subitems === true && Array.isArray(n.sum_of) && n.sum_of.length) {
       const chosen = sumSources(n, byCode); // the items it lists (e.g. "Total male" = male of each branch)
@@ -44,7 +57,7 @@ export function hierarchyOf(schema) {
       found = summableSubitems(n);
     }
     if (!found) continue;
-    parents.push({ key: n.code, label: labels.get(String(n.code)), children: found.map((c) => ({ key: c.code, label: labels.get(String(c.code)) })) });
+    parents.push({ key: n.code, label: labels.get(String(n.code)), percent: isPercent(n.measurement), children: found.map((c) => ({ key: c.code, label: labels.get(String(c.code)) })) });
   }
   return parents;
 }
@@ -72,24 +85,24 @@ export function orderParents(parents) {
 export function hierarchyIssues(parents, nums) {
   const issues = {};
   for (const p of parents) {
-    const vals = p.children.map((c) => nums[c.key]);
-    if (vals.every((v) => v === undefined)) continue;
-    const sum = round(vals.reduce((s, v) => s + (v ?? 0), 0));
+    const sum = combine(p, p.children.map((c) => nums[c.key]));
+    if (sum === undefined) continue;
     const own = nums[p.key];
-    if (own === undefined) issues[p.key] = `needs a value — sub-items add up to ${fmt(sum)}`;
-    else if (Math.abs(own - sum) > EPS) issues[p.key] = `should be ${fmt(sum)} (sum of sub-items), not ${fmt(own)}`;
+    const word = p.percent ? 'average' : 'sum';
+    if (own === undefined) issues[p.key] = `needs a value — the ${word} of its sub-items is ${fmt(sum)}`;
+    else if (Math.abs(own - sum) > EPS) issues[p.key] = `should be ${fmt(sum)} (${word} of sub-items), not ${fmt(own)}`;
   }
   return issues;
 }
 
-/** Fill every parent that has sub-item values with their sum, deepest first. Returns new string values. */
+/** Fill every parent that has sub-item values with their sum (a percentage: their average), deepest first. Returns new string values. */
 export function calcParents(parents, values) {
   const out = { ...values };
   const nums = toNumbers(out);
   const ordered = orderParents(parents);
   for (const p of ordered) {
-    if (p.children.every((c) => nums[c.key] === undefined)) continue;
-    const sum = round(p.children.reduce((s, c) => s + (nums[c.key] ?? 0), 0));
+    const sum = combine(p, p.children.map((c) => nums[c.key]));
+    if (sum === undefined) continue;
     nums[p.key] = sum;
     out[p.key] = String(sum);
   }
